@@ -1,0 +1,6 @@
+.venv/
+__pycache__/
+*.pyc
+server.log
+shots/
+launcher/inspect.ps1
