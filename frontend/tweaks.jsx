@@ -79,8 +79,43 @@ function TweaksPanel({ open, tweaks, setTweaks, onClose }) {
             onChange={(v) => set('liveOn', v === 'on')}
             options={[{ value: 'on', label: 'On' }, { value: 'off', label: 'Paused' }]}/>
         </TweakGroup>
+        <HookToggle/>
       </div>
     </div>
+  );
+}
+
+function HookToggle() {
+  const [state, setState] = useState_T({ loading: true, installed: false });
+  useEffect_T(() => {
+    fetch('/api/hook/status').then(r => r.json()).then(s => setState({ loading: false, installed: !!s.installed }));
+  }, []);
+  async function toggle() {
+    setState((s) => ({ ...s, loading: true }));
+    const path = state.installed ? '/api/hook/uninstall' : '/api/hook/install';
+    const r = await fetch(path, { method: 'POST' }).then(r => r.json());
+    setState({ loading: false, installed: !!r.installed });
+  }
+  return (
+    <TweakGroup label="Per-tab focus (hook)">
+      <div style={{
+        display: 'flex', flexDirection: 'column', gap: 6,
+        fontSize: 10.5, color: 'rgba(255,255,255,0.6)', lineHeight: 1.4,
+      }}>
+        <span>Installs a Claude SessionStart hook that stamps tab titles so Focus can switch to the exact Windows Terminal tab.</span>
+        <button onClick={toggle} disabled={state.loading}
+          style={{
+            padding: '6px 10px',
+            background: state.installed ? 'rgba(138,176,120,0.18)' : 'rgba(255,255,255,0.06)',
+            border: '1px solid ' + (state.installed ? 'rgba(138,176,120,0.5)' : 'rgba(255,255,255,0.1)'),
+            borderRadius: 6, cursor: state.loading ? 'wait' : 'pointer',
+            color: state.installed ? '#8ab078' : 'rgba(255,255,255,0.85)',
+            fontFamily: 'inherit', fontSize: 11, fontWeight: 600,
+          }}>
+          {state.loading ? '…' : state.installed ? '✓ Installed — click to remove' : 'Install hook'}
+        </button>
+      </div>
+    </TweakGroup>
   );
 }
 

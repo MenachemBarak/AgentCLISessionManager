@@ -26,7 +26,10 @@ from watchdog.observers import Observer
 HOME = Path(os.path.expanduser("~"))
 PROJECTS_DIR = HOME / ".claude" / "projects"
 ACTIVE_DIR = HOME / ".claude" / "sessions"
-FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
+SETTINGS_FILE = HOME / ".claude" / "settings.json"
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+FRONTEND_DIR = PROJECT_ROOT / "frontend"
+HOOK_SCRIPT = PROJECT_ROOT / "hooks" / "session_start.py"
 
 app = FastAPI(title="Claude Sessions Viewer")
 app.add_middleware(
@@ -467,6 +470,80 @@ _tab_indices: dict[str, int] = {}
 _next_tab_index: int = 0
 
 
+# ─────────────────────── UI Automation (per-tab focus) ───────────────────────
+def _uia_select_tab(session_id: str) -> dict:
+    """Use UI Automation to find and select the WT tab whose title is `cc-<sid>`.
+
+    This relies on the SessionStart hook having run for that session (which
+    stamps the tab title via OSC-0). Falls back gracefully if UIA isn't
+    available or no matching tab is found.
+    """
+    try:
+        import uiautomation as auto
+    except Exception as e:
+        return {"ok": False, "error": f"uiautomation unavailable: {e}"}
+
+    target_name = f"cc-{session_id}"
+    # Substring match since Claude Code decorates the title with a spinner or
+    # status (e.g. "⠐ cc-<sid>" / "cc-<sid> · editing").
+    def _matches(name: str) -> bool:
+        return bool(name) and target_name in name
+
+    desktop = auto.GetRootControl()
+    # Enumerate all top-level Windows Terminal windows.
+    try:
+        wt_windows = desktop.GetChildren()
+    except Exception as e:
+        return {"ok": False, "error": f"GetChildren failed: {e}"}
+
+    for win in wt_windows:
+        try:
+            if win.ClassName != "CASCADIA_HOSTING_WINDOW_CLASS":
+                continue
+        except Exception:
+            continue
+        # Enumerate descendants looking for any TabItem with matching Name.
+        matched_tab = None
+        def _walk(el, depth=0):
+            nonlocal matched_tab
+            if matched_tab or depth > 10:
+                return
+            try:
+                for c in el.GetChildren():
+                    if matched_tab:
+                        return
+                    try:
+                        if c.ControlTypeName == "TabItemControl" and _matches(c.Name):
+                            matched_tab = c
+                            return
+                    except Exception:
+                        pass
+                    _walk(c, depth + 1)
+            except Exception:
+                pass
+        _walk(win)
+        if matched_tab is None:
+            continue
+        tab = matched_tab
+        # Select the tab (switches to it) and raise the window.
+        try:
+            tab.GetSelectionItemPattern().Select()
+        except Exception:
+            try:
+                tab.Click(simulateMove=False)
+            except Exception:
+                pass
+        try:
+            win.SetActive()
+        except Exception:
+            pass
+        hwnd = getattr(win, "NativeWindowHandle", None)
+        return {"ok": True, "hwnd": int(hwnd) if hwnd else None,
+                "windowTitle": win.Name, "tabName": target_name}
+
+    return {"ok": False, "error": "no matching tab"}
+
+
 @app.post("/api/focus")
 def focus_session(req: FocusReq):
     # find the pid whose session matches
@@ -481,13 +558,22 @@ def focus_session(req: FocusReq):
             except Exception:
                 continue
 
-    # Strategy: wt.exe itself already has foreground rights, so asking it to
-    # focus-tab inside the named window reliably raises that window. For
-    # sessions opened outside the viewer we can still ask wt to focus *some*
-    # tab in window 0 (the most recently used WT window) as a best-effort.
+    focus_methods = []
+
+    # Strategy 0 (primary): UI Automation finds the tab by its OSC-0 title
+    # stamped by the SessionStart hook. This is the only method that can
+    # switch to the *specific* tab for externally-started sessions.
+    uia = _uia_select_tab(req.sessionId)
+    if uia.get("ok"):
+        focus_methods.append("uia:select-tab-by-name")
+        return {"ok": True, "pid": None, "hwnd": uia.get("hwnd"),
+                "tabIndex": None, "focusedTab": True,
+                "appActivate": False, "ctypes": False,
+                "uia": True, "methods": focus_methods}
+
+    # Strategy 1: wt.exe focus-tab by tracked index (for tabs opened via viewer).
     tab_idx = _tab_indices.get(req.sessionId)
     focused_tab = False
-    focus_methods = []
 
     if tab_idx is not None:
         try:
@@ -551,8 +637,83 @@ def focus_session(req: FocusReq):
         "ok": ok, "pid": target_pid, "hwnd": hwnd,
         "tabIndex": tab_idx, "focusedTab": focused_tab,
         "appActivate": ps_ok, "ctypes": ct_ok,
+        "uia": False, "uiaError": uia.get("error"),
         "methods": focus_methods,
     }
+
+
+# ─────────────────────── Hook install/status ───────────────────────
+def _load_settings() -> dict:
+    if not SETTINGS_FILE.exists():
+        return {}
+    try:
+        return json.loads(SETTINGS_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def _save_settings(data: dict) -> None:
+    SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    SETTINGS_FILE.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+
+HOOK_MARKER = "claude-sessions-viewer/session_start"
+
+
+def _hook_command() -> str:
+    # Use the project's venv python so we don't depend on a specific system Python.
+    vpy = PROJECT_ROOT / ".venv" / "Scripts" / "python.exe"
+    py = str(vpy) if vpy.exists() else "python"
+    return f'"{py}" "{HOOK_SCRIPT}"'
+
+
+@app.get("/api/hook/status")
+def hook_status():
+    data = _load_settings()
+    hooks = (data.get("hooks") or {}).get("SessionStart") or []
+    installed = any(h.get("__mark") == HOOK_MARKER for h in hooks if isinstance(h, dict))
+    return {"installed": installed, "settingsFile": str(SETTINGS_FILE),
+            "hookScript": str(HOOK_SCRIPT), "command": _hook_command()}
+
+
+@app.post("/api/hook/install")
+def hook_install():
+    if not HOOK_SCRIPT.exists():
+        raise HTTPException(500, f"hook script missing at {HOOK_SCRIPT}")
+    data = _load_settings()
+    hooks_cfg = data.setdefault("hooks", {})
+    entry = {
+        "__mark": HOOK_MARKER,
+        "matcher": "*",
+        "hooks": [{"type": "command", "command": _hook_command()}],
+    }
+    for event in ("SessionStart", "UserPromptSubmit"):
+        arr = hooks_cfg.setdefault(event, [])
+        arr[:] = [h for h in arr if not (isinstance(h, dict) and h.get("__mark") == HOOK_MARKER)]
+        arr.append(entry)
+    _save_settings(data)
+    return {"ok": True, "installed": True, "settingsFile": str(SETTINGS_FILE)}
+
+
+@app.post("/api/hook/uninstall")
+def hook_uninstall():
+    data = _load_settings()
+    hooks_cfg = data.get("hooks") or {}
+    changed = False
+    for event in ("SessionStart", "UserPromptSubmit"):
+        arr = hooks_cfg.get(event) or []
+        new_arr = [h for h in arr if not (isinstance(h, dict) and h.get("__mark") == HOOK_MARKER)]
+        if new_arr != arr:
+            changed = True
+            if new_arr:
+                hooks_cfg[event] = new_arr
+            else:
+                hooks_cfg.pop(event, None)
+    if changed:
+        if not hooks_cfg:
+            data.pop("hooks", None)
+        _save_settings(data)
+    return {"ok": True, "installed": False}
 
 
 def _find_wt_window() -> int | None:
