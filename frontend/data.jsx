@@ -16,6 +16,7 @@ function normalize(s) {
     id: s.id,
     title: s.title || '(untitled)',
     label: s.label || null,
+    userLabel: s.userLabel || null,
     cwd: s.cwd || '',
     branch: s.branch || '-',
     model: s.model || 'claude',
@@ -38,6 +39,17 @@ async function generateLabel(id) {
       body: JSON.stringify({}),
     });
   } catch (e) {}
+}
+
+async function setUserLabel(id, userLabel) {
+  try {
+    const r = await fetch(`/api/sessions/${id}/label`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userLabel }),
+    });
+    return r.ok ? await r.json() : null;
+  } catch (e) { return null; }
 }
 
 async function fetchStatus() {
@@ -174,4 +186,4 @@ function createSessionBus() {
 // Stub so existing design import still resolves
 function makeInitialSessions() { return []; }
 
-Object.assign(window, { makeInitialSessions, createSessionBus, openSession, fetchTranscript, fetchPreview, generateLabel });
+Object.assign(window, { makeInitialSessions, createSessionBus, openSession, fetchTranscript, fetchPreview, generateLabel, setUserLabel });

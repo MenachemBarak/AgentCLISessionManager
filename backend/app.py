@@ -54,9 +54,34 @@ def _get_label(sid: str) -> str | None:
     return e.get("label") if isinstance(e, dict) else None
 
 
+def _get_user_label(sid: str) -> str | None:
+    e = _load_labels().get(sid)
+    return e.get("userLabel") if isinstance(e, dict) else None
+
+
+def _effective_label(sid: str) -> str | None:
+    e = _load_labels().get(sid) or {}
+    return (isinstance(e, dict) and (e.get("userLabel") or e.get("label"))) or None
+
+
 def _set_label(sid: str, label: str) -> None:
     d = _load_labels()
-    d[sid] = {"label": label, "at": time.time()}
+    entry = d.get(sid) if isinstance(d.get(sid), dict) else {}
+    entry["label"] = label
+    entry["at"] = time.time()
+    d[sid] = entry
+    _save_labels(d)
+
+
+def _set_user_label(sid: str, label: str | None) -> None:
+    d = _load_labels()
+    entry = d.get(sid) if isinstance(d.get(sid), dict) else {}
+    if label is None or not label.strip():
+        entry.pop("userLabel", None)
+    else:
+        entry["userLabel"] = label.strip()[:80]
+    entry["userAt"] = time.time()
+    d[sid] = entry
     _save_labels(d)
 
 
@@ -338,8 +363,9 @@ def list_sessions(limit: int = 1000, offset: int = 0):
         if m["id"] in active_ids:
             m["active"] = True
             m["activityLabel"] = _activity_for(Path(meta["path"]))
-        entry = labels.get(m["id"])
-        m["label"] = entry.get("label") if isinstance(entry, dict) else None
+        entry = labels.get(m["id"]) if isinstance(labels.get(m["id"]), dict) else {}
+        m["label"] = entry.get("label") if entry else None
+        m["userLabel"] = entry.get("userLabel") if entry else None
         items.append(m)
     items.sort(key=lambda s: s["lastActive"], reverse=True)
     return {
@@ -350,7 +376,17 @@ def list_sessions(limit: int = 1000, offset: int = 0):
 
 @app.get("/api/sessions/{sid}/label")
 def get_session_label(sid: str):
-    return {"id": sid, "label": _get_label(sid)}
+    return {"id": sid, "label": _get_label(sid), "userLabel": _get_user_label(sid)}
+
+
+class UserLabelReq(BaseModel):
+    userLabel: str | None = None
+
+
+@app.put("/api/sessions/{sid}/label")
+def set_session_user_label(sid: str, req: UserLabelReq):
+    _set_user_label(sid, req.userLabel)
+    return {"id": sid, "label": _get_label(sid), "userLabel": _get_user_label(sid)}
 
 
 class LabelGenReq(BaseModel):

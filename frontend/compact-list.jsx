@@ -123,15 +123,7 @@ function CompactRow({ session, accent, selected, onSelect, onOpen, onHover, onLe
           overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
           flex: 1, minWidth: 0,
         }} title={session.title}>
-          {session.label
-            ? <>
-                <span>{session.label}</span>
-                <span style={{
-                  fontFamily: 'JetBrains Mono, ui-monospace, monospace',
-                  fontSize: 10, color: 'rgba(255,255,255,0.35)', marginLeft: 6,
-                }}>· {session.id.slice(0, 8)}</span>
-              </>
-            : session.title}
+          <RowTitle session={session} accent={accent}/>
         </div>
       </div>
       <div style={{
@@ -177,6 +169,83 @@ function CompactRow({ session, accent, selected, onSelect, onOpen, onHover, onLe
         }}>{session.messageCount} msg</span>
       </div>
     </div>
+  );
+}
+
+function RowTitle({ session, accent }) {
+  const [editing, setEditing] = useStateCL(false);
+  const [value, setValue] = useStateCL(session.userLabel || '');
+  const [hover, setHover] = useStateCL(false);
+  const inputRef = useRefCL(null);
+  useEffectCL(() => {
+    if (editing) {
+      setValue(session.userLabel || session.label || '');
+      setTimeout(() => inputRef.current?.select(), 0);
+    }
+  }, [editing]);
+  async function save() {
+    const v = value.trim();
+    setEditing(false);
+    if ((v || null) !== (session.userLabel || null)) {
+      await window.setUserLabel(session.id, v || null);
+    }
+  }
+  if (editing) {
+    return (
+      <input
+        ref={inputRef} value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onClick={(e) => e.stopPropagation()}
+        onBlur={save}
+        onKeyDown={(e) => {
+          e.stopPropagation();
+          if (e.key === 'Enter') save();
+          else if (e.key === 'Escape') setEditing(false);
+        }}
+        placeholder={session.label || 'Add a title…'}
+        style={{
+          flex: 1, minWidth: 0,
+          background: 'rgba(0,0,0,0.35)',
+          border: `1px solid ${accent}55`,
+          outline: `2px solid ${accent}44`,
+          borderRadius: 4,
+          padding: '2px 6px',
+          color: 'rgba(255,255,255,0.95)',
+          fontFamily: 'inherit', fontSize: 12.5, fontWeight: 500,
+        }}/>
+    );
+  }
+  const display = session.userLabel || session.label;
+  return (
+    <span
+      onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
+      onClick={(e) => { e.stopPropagation(); setEditing(true); }}
+      style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, cursor: 'text' }}>
+      {display ? (
+        <>
+          <span style={{
+            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+            color: session.userLabel ? 'rgba(255,255,255,0.98)' : 'rgba(255,255,255,0.94)',
+            borderBottom: session.userLabel ? `1px dotted ${accent}88` : 'none',
+          }}>{display}</span>
+          <span style={{
+            fontFamily: 'JetBrains Mono, ui-monospace, monospace',
+            fontSize: 10, color: 'rgba(255,255,255,0.35)', flexShrink: 0,
+          }}>· {session.id.slice(0, 8)}</span>
+          {hover && (
+            <span style={{
+              fontSize: 9.5, color: accent, opacity: 0.7, flexShrink: 0,
+              textTransform: 'uppercase', letterSpacing: 0.5,
+            }}>edit</span>
+          )}
+        </>
+      ) : (
+        <span style={{
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          color: 'rgba(255,255,255,0.94)',
+        }}>{session.title}</span>
+      )}
+    </span>
   );
 }
 

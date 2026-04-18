@@ -24,7 +24,9 @@ def _load_label(sid: str) -> str | None:
         with LABELS_FILE.open("r", encoding="utf-8") as f:
             d = json.load(f)
         e = d.get(sid)
-        return e.get("label") if isinstance(e, dict) else None
+        if not isinstance(e, dict):
+            return None
+        return e.get("userLabel") or e.get("label")
     except Exception:
         return None
 
