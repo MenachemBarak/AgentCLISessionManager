@@ -27,9 +27,69 @@ HOME = Path(os.path.expanduser("~"))
 PROJECTS_DIR = HOME / ".claude" / "projects"
 ACTIVE_DIR = HOME / ".claude" / "sessions"
 SETTINGS_FILE = HOME / ".claude" / "settings.json"
+LABELS_FILE = HOME / ".claude" / "viewer-labels.json"
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 FRONTEND_DIR = PROJECT_ROOT / "frontend"
 HOOK_SCRIPT = PROJECT_ROOT / "hooks" / "session_start.py"
+
+import threading  # noqa: E402
+_LABELS_LOCK = threading.Lock()
+
+
+def _load_labels() -> dict:
+    try:
+        return json.loads(LABELS_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def _save_labels(d: dict) -> None:
+    with _LABELS_LOCK:
+        LABELS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        LABELS_FILE.write_text(json.dumps(d, indent=2), encoding="utf-8")
+
+
+def _get_label(sid: str) -> str | None:
+    e = _load_labels().get(sid)
+    return e.get("label") if isinstance(e, dict) else None
+
+
+def _set_label(sid: str, label: str) -> None:
+    d = _load_labels()
+    d[sid] = {"label": label, "at": time.time()}
+    _save_labels(d)
+
+
+_LABEL_INFLIGHT: set[str] = set()
+
+
+def _generate_label_sync(sid: str, prompt: str) -> str | None:
+    """Invoke `claude -p` to generate a short title for the session.
+    Stores in cache; returns the label or None."""
+    if sid in _LABEL_INFLIGHT:
+        return None
+    _LABEL_INFLIGHT.add(sid)
+    try:
+        summary_prompt = (
+            "Generate a 3-5 word lowercase title for this coding task, "
+            "no quotes, no punctuation, output just the title and nothing "
+            f"else.\n\nTask: {prompt[:800]}"
+        )
+        r = subprocess.run(
+            ["claude", "-p", "--model", "haiku", summary_prompt],
+            capture_output=True, text=True, timeout=45, check=False,
+            encoding="utf-8", errors="replace",
+        )
+        label = (r.stdout or "").strip().splitlines()[0].strip() if r.stdout else ""
+        label = label.strip('"\'`').replace("\n", " ").lower()[:40]
+        if label:
+            _set_label(sid, label)
+            return label
+    except Exception:
+        pass
+    finally:
+        _LABEL_INFLIGHT.discard(sid)
+    return None
 
 app = FastAPI(title="Claude Sessions Viewer")
 app.add_middleware(
@@ -271,18 +331,55 @@ def list_sessions(limit: int = 1000, offset: int = 0):
     if not _INDEX_BUILT:
         build_index()
     active_ids = _get_active_session_ids()
+    labels = _load_labels()
     items = []
     for meta in _INDEX.values():
         m = {k: v for k, v in meta.items() if not k.startswith("_")}
         if m["id"] in active_ids:
             m["active"] = True
             m["activityLabel"] = _activity_for(Path(meta["path"]))
+        entry = labels.get(m["id"])
+        m["label"] = entry.get("label") if isinstance(entry, dict) else None
         items.append(m)
     items.sort(key=lambda s: s["lastActive"], reverse=True)
     return {
         "total": len(items),
         "items": items[offset : offset + limit],
     }
+
+
+@app.get("/api/sessions/{sid}/label")
+def get_session_label(sid: str):
+    return {"id": sid, "label": _get_label(sid)}
+
+
+class LabelGenReq(BaseModel):
+    prompt: str | None = None
+    force: bool = False
+
+
+@app.post("/api/sessions/{sid}/label/generate")
+def generate_session_label(sid: str, req: LabelGenReq | None = None):
+    if not req:
+        req = LabelGenReq()
+    existing = _get_label(sid)
+    if existing and not req.force:
+        return {"id": sid, "label": existing, "cached": True}
+    meta = _INDEX.get(sid)
+    if not meta:
+        raise HTTPException(404, "not found")
+    prompt = req.prompt
+    if not prompt:
+        # pull first user message from the file
+        deep = _scan_session_meta(Path(meta["path"]), deep=True)
+        msgs = (deep or {}).get("firstUserMessages") or []
+        prompt = msgs[0] if msgs else meta.get("title", "")
+    prompt = (prompt or "").strip()
+    if not prompt:
+        return {"id": sid, "label": None, "error": "no prompt"}
+    # Run in background thread so the POST returns fast.
+    threading.Thread(target=_generate_label_sync, args=(sid, prompt), daemon=True).start()
+    return {"id": sid, "queued": True}
 
 
 @app.get("/api/sessions/{session_id}/preview")
@@ -483,11 +580,12 @@ def _uia_select_tab(session_id: str) -> dict:
     except Exception as e:
         return {"ok": False, "error": f"uiautomation unavailable: {e}"}
 
-    target_name = f"cc-{session_id}"
-    # Substring match since Claude Code decorates the title with a spinner or
-    # status (e.g. "⠐ cc-<sid>" / "cc-<sid> · editing").
+    # The hook stamps titles as either "cc-<sid8>" or "<label> · <sid8>".
+    # Match on the 8-char prefix which is stable across both forms.
+    sid8 = session_id[:8]
+
     def _matches(name: str) -> bool:
-        return bool(name) and target_name in name
+        return bool(name) and sid8 in name
 
     desktop = auto.GetRootControl()
     # Enumerate all top-level Windows Terminal windows.
@@ -539,7 +637,7 @@ def _uia_select_tab(session_id: str) -> dict:
             pass
         hwnd = getattr(win, "NativeWindowHandle", None)
         return {"ok": True, "hwnd": int(hwnd) if hwnd else None,
-                "windowTitle": win.Name, "tabName": target_name}
+                "windowTitle": win.Name, "tabName": tab.Name}
 
     return {"ok": False, "error": "no matching tab"}
 

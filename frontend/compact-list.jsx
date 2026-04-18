@@ -122,7 +122,17 @@ function CompactRow({ session, accent, selected, onSelect, onOpen, onHover, onLe
           color: 'rgba(255,255,255,0.94)',
           overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
           flex: 1, minWidth: 0,
-        }}>{session.title}</div>
+        }} title={session.title}>
+          {session.label
+            ? <>
+                <span>{session.label}</span>
+                <span style={{
+                  fontFamily: 'JetBrains Mono, ui-monospace, monospace',
+                  fontSize: 10, color: 'rgba(255,255,255,0.35)', marginLeft: 6,
+                }}>· {session.id.slice(0, 8)}</span>
+              </>
+            : session.title}
+        </div>
       </div>
       <div style={{
         display: 'flex', alignItems: 'center', gap: 6,

@@ -1,21 +1,53 @@
-"""Claude Code hook: stamp the tab title with the session id.
+"""Claude Code hook: tag the terminal tab title with `<label> · <sid8>`.
 
-Claude Code's TUI continuously rewrites the terminal tab title, so a one-shot
-OSC-0 from SessionStart alone gets overwritten. This hook handles two events:
+- SessionStart: emits OSC-0 so the title appears immediately.
+- UserPromptSubmit: returns JSON `sessionTitle` so Claude's TUI keeps the
+  title across redraws. Also triggers lazy label generation via the viewer
+  backend when no label is cached yet.
 
-- SessionStart: emit OSC-0 `cc-<sid>` directly to the terminal.
-- UserPromptSubmit: return JSON with `sessionTitle: cc-<sid>` so Claude's own
-  rendering includes the tag in its tab title.
-
-Both combined give the Sessions Viewer a reliable cc-<sid> marker to match
-via UI Automation when focusing a specific WT tab.
-
-Invoked as: `python session_start.py <event-name>`.
+Label cache at ~/.claude/viewer-labels.json; the viewer server fills it.
 """
 from __future__ import annotations
 
 import json
+import os
 import sys
+from pathlib import Path
+
+HOME = Path(os.path.expanduser("~"))
+LABELS_FILE = HOME / ".claude" / "viewer-labels.json"
+VIEWER_URL = "http://127.0.0.1:8765"
+
+
+def _load_label(sid: str) -> str | None:
+    try:
+        with LABELS_FILE.open("r", encoding="utf-8") as f:
+            d = json.load(f)
+        e = d.get(sid)
+        return e.get("label") if isinstance(e, dict) else None
+    except Exception:
+        return None
+
+
+def _request_label(sid: str, prompt: str) -> None:
+    """Fire-and-forget: ask viewer backend to generate a label. Never blocks."""
+    try:
+        import urllib.request
+        body = json.dumps({"prompt": prompt[:1000]}).encode("utf-8")
+        req = urllib.request.Request(
+            f"{VIEWER_URL}/api/sessions/{sid}/label/generate",
+            data=body, method="POST",
+            headers={"Content-Type": "application/json"},
+        )
+        urllib.request.urlopen(req, timeout=0.4).read()
+    except Exception:
+        pass
+
+
+def _compose_title(sid: str) -> str:
+    sid8 = sid[:8]
+    label = _load_label(sid)
+    return f"{label} · {sid8}" if label else f"cc-{sid8}"
 
 
 def main() -> None:
@@ -27,22 +59,26 @@ def main() -> None:
     if not sid:
         return
     event = (data.get("hook_event_name") or "").strip()
-    label = f"cc-{sid}"
+    title = _compose_title(sid)
 
     if event == "UserPromptSubmit":
-        # Ask Claude to set its session title; it will include this in the
-        # OSC-0 stream it writes to the terminal on every render.
+        # Ask Claude to use our title for its own renders.
         out = {
             "hookSpecificOutput": {
                 "hookEventName": "UserPromptSubmit",
-                "sessionTitle": label,
+                "sessionTitle": title,
             }
         }
         sys.stdout.write(json.dumps(out))
+        # Trigger label generation if not cached yet.
+        if _load_label(sid) is None:
+            prompt = (data.get("prompt") or data.get("user_prompt") or "").strip()
+            if prompt:
+                _request_label(sid, prompt)
         return
 
-    # SessionStart (and anything else) — emit OSC-0 directly.
-    sys.stdout.write(f"\x1b]0;{label}\x07")
+    # SessionStart / everything else — emit OSC-0 directly.
+    sys.stdout.write(f"\x1b]0;{title}\x07")
     sys.stdout.flush()
 
 
