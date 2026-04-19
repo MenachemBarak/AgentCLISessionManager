@@ -151,7 +151,9 @@ jobs:
       - name: Smoke-test server against mock CLAUDE_HOME
         run: |
           export CLAUDE_HOME="$PWD/tests/fixtures/claude-home"
-          /tmp/rel-venv/bin/claude-sessions-viewer --no-browser --port 8799 --log-level warning &
+          # --server-only: Linux CI runners have no display, so we skip the
+          # pywebview window and just validate the HTTP surface.
+          /tmp/rel-venv/bin/claude-sessions-viewer --server-only --no-browser --port 8799 --log-level warning &
           SERVER_PID=$!
           for i in $(seq 1 30); do
             if curl -s http://127.0.0.1:8799/api/status | grep -q '"ready":true'; then break; fi
