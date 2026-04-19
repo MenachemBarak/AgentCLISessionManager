@@ -44,16 +44,51 @@ no cloud round-trip.
 - **Inline rename** — click any session title to set a custom label, persisted in `~/.claude/viewer-labels.json`
 - **Reads Claude's rename** — shows titles set via `/rename` inside Claude Code (`custom-title` JSONL entries)
 
-## Install (Windows)
+## Install
+
+Pick whichever fits. All three install paths are built and verified by the
+[release workflow](.github/workflows/release.yml) on every tagged release.
+
+### 1. `pipx` (recommended for CLI use)
+
+```bash
+pipx install git+https://github.com/MenachemBarak/AgentCLISessionManager.git@v0.3.0
+claude-sessions-viewer
+```
+
+Once on PyPI:
+
+```bash
+pipx install claude-sessions-viewer
+claude-sessions-viewer --help
+```
+
+`claude-sessions-viewer` accepts `--host`, `--port`, `--no-browser`, `--log-level`,
+and `--version`.
+
+### 2. Windows zip (desktop shortcut)
+
+Download `claude-sessions-viewer-<ver>-windows.zip` from the
+[Releases page](https://github.com/MenachemBarak/AgentCLISessionManager/releases),
+extract, then:
 
 ```cmd
-git clone https://github.com/MenachemBarak/AgentCLISessionManager.git
-cd AgentCLISessionManager
 launcher\install-shortcut.bat
 ```
 
-Creates a `Claude Sessions.lnk` on your Desktop. First double-click auto-creates a venv and
-installs deps; subsequent launches just open the browser at `http://127.0.0.1:8765`.
+Creates a `Claude Sessions.lnk` on your Desktop. First double-click auto-creates
+a venv and installs deps; subsequent launches just open the browser at
+`http://127.0.0.1:8765`.
+
+### 3. From source (for contributors)
+
+```bash
+git clone https://github.com/MenachemBarak/AgentCLISessionManager.git
+cd AgentCLISessionManager
+python -m venv .venv
+.venv/Scripts/python -m pip install -e .
+claude-sessions-viewer
+```
 
 ## Requirements
 

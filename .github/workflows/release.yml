@@ -1,0 +1,151 @@
+name: Release
+
+# Triggers on annotated tag push matching v*.*.*. The tag must match
+# backend/__version__.py — the build step aborts if they diverge.
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write  # to create the GitHub Release
+
+jobs:
+  build:
+    name: Build wheel + sdist + Windows zip
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install build tools
+        run: pip install build==1.2.2 twine==5.1.1
+
+      - name: Verify tag matches __version__
+        id: version
+        run: |
+          TAG="${GITHUB_REF#refs/tags/v}"
+          PKG=$(python -c "import importlib.util, sys; s = importlib.util.spec_from_file_location('v', 'backend/__version__.py'); m = importlib.util.module_from_spec(s); s.loader.exec_module(m); print(m.__version__)")
+          echo "tag=$TAG  package=$PKG"
+          if [ "$TAG" != "$PKG" ]; then
+            echo "::error::Tag v$TAG does not match backend/__version__.py ($PKG). Bump __version__ before tagging." >&2
+            exit 1
+          fi
+          echo "version=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Build wheel + sdist
+        run: python -m build --wheel --sdist
+
+      - name: Check distributions with twine
+        run: twine check --strict dist/*
+
+      - name: Build Windows zip
+        run: |
+          VER="${{ steps.version.outputs.version }}"
+          STAGING="staging/claude-sessions-viewer-${VER}"
+          mkdir -p "$STAGING"
+          # Copy what the launcher needs; exclude dev-only and large dirs.
+          rsync -a \
+            --exclude='.git/' --exclude='.github/' --exclude='.venv/' \
+            --exclude='__pycache__/' --exclude='.pytest_cache/' --exclude='.ruff_cache/' \
+            --exclude='dist/' --exclude='build/' --exclude='*.egg-info/' \
+            --exclude='tests/' --exclude='playground/' --exclude='shots/' \
+            --exclude='docs/screenshots/' --exclude='staging/' \
+            --exclude='.pre-commit-config.yaml' \
+            ./ "$STAGING/"
+          (cd staging && zip -r "../dist/claude-sessions-viewer-${VER}-windows.zip" "claude-sessions-viewer-${VER}")
+          ls -la dist/
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-artifacts
+          path: dist/*
+
+  verify:
+    name: Verify built wheel installs and runs
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: release-artifacts
+          path: dist
+      - name: Install built wheel in a fresh venv
+        run: |
+          python -m venv /tmp/rel-venv
+          /tmp/rel-venv/bin/pip install --upgrade pip
+          /tmp/rel-venv/bin/pip install dist/claude_sessions_viewer-*.whl
+      - name: Verify CLI --version matches tag
+        run: |
+          OUT=$(/tmp/rel-venv/bin/claude-sessions-viewer --version)
+          echo "$OUT"
+          echo "$OUT" | grep -qE "claude-sessions-viewer ${{ needs.build.outputs.version }}$"
+      - name: Smoke-test server against mock CLAUDE_HOME
+        run: |
+          export CLAUDE_HOME="$PWD/tests/fixtures/claude-home"
+          /tmp/rel-venv/bin/claude-sessions-viewer --no-browser --port 8799 --log-level warning &
+          SERVER_PID=$!
+          for i in $(seq 1 30); do
+            if curl -s http://127.0.0.1:8799/api/status | grep -q '"ready":true'; then break; fi
+            sleep 0.3
+          done
+          BODY=$(curl -s http://127.0.0.1:8799/api/status)
+          echo "$BODY"
+          echo "$BODY" | grep -q "\"version\":\"${{ needs.build.outputs.version }}\""
+          ITEMS=$(curl -s http://127.0.0.1:8799/api/sessions | python -c "import sys,json; print(len(json.load(sys.stdin)['items']))")
+          test "$ITEMS" = "2"  # fixture has exactly 2 sessions
+          kill $SERVER_PID
+
+  release:
+    name: Create GitHub Release
+    needs: [build, verify]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: release-artifacts
+          path: dist
+      - name: Extract changelog entry for this version
+        id: changelog
+        run: |
+          VER="${{ needs.build.outputs.version }}"
+          # Grab the section between `## [VER]` and the next `## [`.
+          awk -v ver="[$VER]" '
+            $0 ~ "^## " ver { flag=1; next }
+            flag && /^## \[/ { exit }
+            flag { print }
+          ' CHANGELOG.md > release_notes.md
+          if [ ! -s release_notes.md ]; then
+            echo "No changelog entry for v$VER — aborting release creation." >&2
+            exit 1
+          fi
+          cat release_notes.md
+      - name: Create Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VER="${{ needs.build.outputs.version }}"
+          gh release create "v$VER" \
+            --title "v$VER" \
+            --notes-file release_notes.md \
+            dist/claude_sessions_viewer-*.whl \
+            dist/claude_sessions_viewer-*.tar.gz \
+            dist/claude-sessions-viewer-*-windows.zip

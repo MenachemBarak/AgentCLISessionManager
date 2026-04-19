@@ -20,6 +20,15 @@ def test_status_ready(client):
     assert body["phase"] == "ready"
 
 
+def test_status_exposes_version(client, app_module):
+    body = client.get("/api/status").json()
+    assert body["version"] == app_module.__version__
+    # Must look like semver.
+    parts = body["version"].split(".")
+    assert len(parts) == 3
+    assert all(p.isdigit() for p in parts)
+
+
 def test_list_sessions_excludes_subagents(client):
     r = client.get("/api/sessions")
     assert r.status_code == 200
