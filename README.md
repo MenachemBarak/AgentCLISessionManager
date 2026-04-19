@@ -46,13 +46,22 @@ no cloud round-trip.
 
 ## Install
 
-Pick whichever fits. All three install paths are built and verified by the
+Pick whichever fits. All four install paths are built and verified by the
 [release workflow](.github/workflows/release.yml) on every tagged release.
 
-### 1. `pipx` (recommended for CLI use)
+### 1. Native Windows x64 app (no Python required)
+
+Download `claude-sessions-viewer-<ver>-windows-x64.exe` from the
+[Releases page](https://github.com/MenachemBarak/AgentCLISessionManager/releases/latest)
+and double-click. A real desktop window opens — no browser, no terminal, no
+Python install.
+
+Requires Edge WebView2, which ships pre-installed on every Windows 11 machine.
+
+### 2. `pipx` (recommended for CLI use)
 
 ```bash
-pipx install git+https://github.com/MenachemBarak/AgentCLISessionManager.git@v0.3.2
+pipx install git+https://github.com/MenachemBarak/AgentCLISessionManager.git@v0.4.0
 claude-sessions-viewer
 ```
 
@@ -63,10 +72,11 @@ pipx install claude-sessions-viewer
 claude-sessions-viewer --help
 ```
 
-`claude-sessions-viewer` accepts `--host`, `--port`, `--no-browser`, `--log-level`,
-and `--version`.
+`claude-sessions-viewer` accepts `--host`, `--port`, `--server-only`,
+`--no-browser`, `--log-level`, and `--version`. Default mode opens a native
+desktop window; `--server-only` runs headless and opens your browser.
 
-### 2. Windows zip (desktop shortcut)
+### 3. Windows zip (source + launcher shortcut)
 
 Download `claude-sessions-viewer-<ver>-windows.zip` from the
 [Releases page](https://github.com/MenachemBarak/AgentCLISessionManager/releases),
@@ -80,7 +90,7 @@ Creates a `Claude Sessions.lnk` on your Desktop. First double-click auto-creates
 a venv and installs deps; subsequent launches just open the browser at
 `http://127.0.0.1:8765`.
 
-### 3. From source (for contributors)
+### 4. From source (for contributors)
 
 ```bash
 git clone https://github.com/MenachemBarak/AgentCLISessionManager.git

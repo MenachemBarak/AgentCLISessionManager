@@ -6,6 +6,25 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-04-19
+
+### Added
+- **Native desktop app** — `claude-sessions-viewer` now opens a real OS window
+  (Edge WebView2 on Windows, WebKit on macOS, WebKitGTK on Linux) around the
+  React UI via [pywebview](https://pywebview.flow.io/). No browser tab, no
+  terminal window — double-click and you get a proper app.
+- **Windows x64 `.exe` release asset** — built with PyInstaller as a single
+  self-contained file. No Python install required on the user's machine.
+  Attached to every GitHub Release as
+  `claude-sessions-viewer-<ver>-windows-x64.exe`.
+- `--server-only` flag preserves the classic "run uvicorn, open a browser"
+  behavior for headless use / remote access.
+
+### Changed
+- Default `--port` is now `0` (pick a free port) in desktop mode, since the
+  user doesn't see the URL anyway. Server-only mode still defaults to 8765.
+- `pywebview>=5.3` is now a core runtime dep.
+
 ## [0.3.2] — 2026-04-19
 
 ### Fixed
@@ -109,7 +128,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - "New tab" / "Split" buttons spawn `wt.exe ... claude --resume <uuid>`
   - Self-installing Desktop shortcut launcher
 
-[Unreleased]: https://github.com/MenachemBarak/AgentCLISessionManager/compare/v0.3.2...HEAD
+[Unreleased]: https://github.com/MenachemBarak/AgentCLISessionManager/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/MenachemBarak/AgentCLISessionManager/releases/tag/v0.4.0
 [0.3.2]: https://github.com/MenachemBarak/AgentCLISessionManager/releases/tag/v0.3.2
 [0.3.1]: https://github.com/MenachemBarak/AgentCLISessionManager/releases/tag/v0.3.1
 [0.3.0]: https://github.com/MenachemBarak/AgentCLISessionManager/releases/tag/v0.3.0

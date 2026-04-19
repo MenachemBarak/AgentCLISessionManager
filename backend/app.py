@@ -42,8 +42,25 @@ ACTIVE_DIR = CLAUDE_HOME / "sessions"
 SETTINGS_FILE = CLAUDE_HOME / "settings.json"
 LABELS_FILE = CLAUDE_HOME / "viewer-labels.json"
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+
 # frontend/ ships inside the backend package so the wheel is self-contained.
-FRONTEND_DIR = Path(__file__).resolve().parent / "frontend"
+# In a PyInstaller one-file exe, data files land under sys._MEIPASS instead.
+def _resolve_frontend_dir() -> Path:
+    here = Path(__file__).resolve().parent / "frontend"
+    if here.is_dir():
+        return here
+    import sys as _sys
+
+    meipass = getattr(_sys, "_MEIPASS", None)
+    if meipass:
+        fallback = Path(meipass) / "backend" / "frontend"
+        if fallback.is_dir():
+            return fallback
+    return here  # will fail at mount-time with a clear error
+
+
+FRONTEND_DIR = _resolve_frontend_dir()
 HOOK_SCRIPT = PROJECT_ROOT / "hooks" / "session_start.py"
 
 import threading  # noqa: E402
