@@ -49,28 +49,9 @@ def _save_labels(d: dict) -> None:
         LABELS_FILE.write_text(json.dumps(d, indent=2), encoding="utf-8")
 
 
-def _get_label(sid: str) -> str | None:
-    e = _load_labels().get(sid)
-    return e.get("label") if isinstance(e, dict) else None
-
-
 def _get_user_label(sid: str) -> str | None:
     e = _load_labels().get(sid)
     return e.get("userLabel") if isinstance(e, dict) else None
-
-
-def _effective_label(sid: str) -> str | None:
-    e = _load_labels().get(sid) or {}
-    return (isinstance(e, dict) and (e.get("userLabel") or e.get("label"))) or None
-
-
-def _set_label(sid: str, label: str) -> None:
-    d = _load_labels()
-    entry = d.get(sid) if isinstance(d.get(sid), dict) else {}
-    entry["label"] = label
-    entry["at"] = time.time()
-    d[sid] = entry
-    _save_labels(d)
 
 
 def _set_user_label(sid: str, label: str | None) -> None:
@@ -78,43 +59,15 @@ def _set_user_label(sid: str, label: str | None) -> None:
     entry = d.get(sid) if isinstance(d.get(sid), dict) else {}
     if label is None or not label.strip():
         entry.pop("userLabel", None)
+        if not entry:
+            d.pop(sid, None)
+        else:
+            d[sid] = entry
     else:
         entry["userLabel"] = label.strip()[:80]
-    entry["userAt"] = time.time()
-    d[sid] = entry
+        entry["userAt"] = time.time()
+        d[sid] = entry
     _save_labels(d)
-
-
-_LABEL_INFLIGHT: set[str] = set()
-
-
-def _generate_label_sync(sid: str, prompt: str) -> str | None:
-    """Invoke `claude -p` to generate a short title for the session.
-    Stores in cache; returns the label or None."""
-    if sid in _LABEL_INFLIGHT:
-        return None
-    _LABEL_INFLIGHT.add(sid)
-    try:
-        summary_prompt = (
-            "Generate a 3-5 word lowercase title for this coding task, "
-            "no quotes, no punctuation, output just the title and nothing "
-            f"else.\n\nTask: {prompt[:800]}"
-        )
-        r = subprocess.run(
-            ["claude", "-p", "--model", "haiku", summary_prompt],
-            capture_output=True, text=True, timeout=45, check=False,
-            encoding="utf-8", errors="replace",
-        )
-        label = (r.stdout or "").strip().splitlines()[0].strip() if r.stdout else ""
-        label = label.strip('"\'`').replace("\n", " ").lower()[:40]
-        if label:
-            _set_label(sid, label)
-            return label
-    except Exception:
-        pass
-    finally:
-        _LABEL_INFLIGHT.discard(sid)
-    return None
 
 app = FastAPI(title="Claude Sessions Viewer")
 app.add_middleware(
@@ -364,7 +317,6 @@ def list_sessions(limit: int = 1000, offset: int = 0):
             m["active"] = True
             m["activityLabel"] = _activity_for(Path(meta["path"]))
         entry = labels.get(m["id"]) if isinstance(labels.get(m["id"]), dict) else {}
-        m["label"] = entry.get("label") if entry else None
         m["userLabel"] = entry.get("userLabel") if entry else None
         items.append(m)
     items.sort(key=lambda s: s["lastActive"], reverse=True)
@@ -376,7 +328,7 @@ def list_sessions(limit: int = 1000, offset: int = 0):
 
 @app.get("/api/sessions/{sid}/label")
 def get_session_label(sid: str):
-    return {"id": sid, "label": _get_label(sid), "userLabel": _get_user_label(sid)}
+    return {"id": sid, "userLabel": _get_user_label(sid)}
 
 
 class UserLabelReq(BaseModel):
@@ -386,36 +338,7 @@ class UserLabelReq(BaseModel):
 @app.put("/api/sessions/{sid}/label")
 def set_session_user_label(sid: str, req: UserLabelReq):
     _set_user_label(sid, req.userLabel)
-    return {"id": sid, "label": _get_label(sid), "userLabel": _get_user_label(sid)}
-
-
-class LabelGenReq(BaseModel):
-    prompt: str | None = None
-    force: bool = False
-
-
-@app.post("/api/sessions/{sid}/label/generate")
-def generate_session_label(sid: str, req: LabelGenReq | None = None):
-    if not req:
-        req = LabelGenReq()
-    existing = _get_label(sid)
-    if existing and not req.force:
-        return {"id": sid, "label": existing, "cached": True}
-    meta = _INDEX.get(sid)
-    if not meta:
-        raise HTTPException(404, "not found")
-    prompt = req.prompt
-    if not prompt:
-        # pull first user message from the file
-        deep = _scan_session_meta(Path(meta["path"]), deep=True)
-        msgs = (deep or {}).get("firstUserMessages") or []
-        prompt = msgs[0] if msgs else meta.get("title", "")
-    prompt = (prompt or "").strip()
-    if not prompt:
-        return {"id": sid, "label": None, "error": "no prompt"}
-    # Run in background thread so the POST returns fast.
-    threading.Thread(target=_generate_label_sync, args=(sid, prompt), daemon=True).start()
-    return {"id": sid, "queued": True}
+    return {"id": sid, "userLabel": _get_user_label(sid)}
 
 
 @app.get("/api/sessions/{session_id}/preview")

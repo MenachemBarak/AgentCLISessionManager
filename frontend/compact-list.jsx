@@ -179,7 +179,7 @@ function RowTitle({ session, accent }) {
   const inputRef = useRefCL(null);
   useEffectCL(() => {
     if (editing) {
-      setValue(session.userLabel || session.label || '');
+      setValue(session.userLabel || '');
       setTimeout(() => inputRef.current?.select(), 0);
     }
   }, [editing]);
@@ -202,7 +202,7 @@ function RowTitle({ session, accent }) {
           if (e.key === 'Enter') save();
           else if (e.key === 'Escape') setEditing(false);
         }}
-        placeholder={session.label || 'Add a title…'}
+        placeholder={`cc-${session.id.slice(0,8)}`}
         style={{
           flex: 1, minWidth: 0,
           background: 'rgba(0,0,0,0.35)',
@@ -215,7 +215,7 @@ function RowTitle({ session, accent }) {
         }}/>
     );
   }
-  const display = session.userLabel || session.label;
+  const display = session.userLabel;
   return (
     <span
       onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}

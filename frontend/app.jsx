@@ -215,15 +215,6 @@ function App() {
     busRef.current.loadTranscript(selectedId);
   }, [selectedId]);
 
-  // Kick off label generation for active sessions that don't have one yet.
-  const labelKickedRef = useRefA(new Set());
-  useEffectA(() => {
-    for (const s of sessions) {
-      if (!s.active || s.label || labelKickedRef.current.has(s.id)) continue;
-      labelKickedRef.current.add(s.id);
-      if (window.generateLabel) window.generateLabel(s.id);
-    }
-  }, [sessions]);
 
   return (
     <WindowChrome tweaks={tweaks}
