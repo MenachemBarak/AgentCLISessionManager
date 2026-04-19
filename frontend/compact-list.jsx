@@ -174,6 +174,18 @@ function CompactRow({ session, accent, selected, onSelect, onOpen, onHover, onLe
   );
 }
 
+function stripSidSuffix(s, id) {
+  if (!s || !id) return null;
+  const sid8 = id.slice(0, 8);
+  // Strip the hook's " · <sid>" suffix (partial or full UUID).
+  const stripped = s.replace(new RegExp(`\\s*·\\s*${sid8}.*$`), '').trim();
+  // Ignore titles that are our hook's placeholder (cc-<uuid>) — the user
+  // didn't actually customize those; fall back to the first user message.
+  if (!stripped) return null;
+  if (/^cc-[0-9a-f]{8}/i.test(stripped)) return null;
+  return stripped;
+}
+
 function RowTitle({ session, accent }) {
   const [editing, setEditing] = useStateCL(false);
   const [value, setValue] = useStateCL(session.userLabel || '');
@@ -218,7 +230,9 @@ function RowTitle({ session, accent }) {
         }}/>
     );
   }
-  const display = session.userLabel;
+  // Display priority: user-set label > Claude's /rename > first user message.
+  const display = session.userLabel || stripSidSuffix(session.claudeTitle, session.id);
+  const isUserSet = !!session.userLabel;
   return (
     <span
       data-testid={`title-${session.id.slice(0,8)}`}
@@ -229,8 +243,8 @@ function RowTitle({ session, accent }) {
         <>
           <span style={{
             overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-            color: session.userLabel ? 'rgba(255,255,255,0.98)' : 'rgba(255,255,255,0.94)',
-            borderBottom: session.userLabel ? `1px dotted ${accent}88` : 'none',
+            color: isUserSet ? 'rgba(255,255,255,0.98)' : 'rgba(255,255,255,0.94)',
+            borderBottom: isUserSet ? `1px dotted ${accent}88` : 'none',
           }}>{display}</span>
           <span style={{
             fontFamily: 'JetBrains Mono, ui-monospace, monospace',

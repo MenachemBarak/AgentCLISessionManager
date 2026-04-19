@@ -116,6 +116,38 @@ def _iter_lines(path: Path) -> Iterator[dict]:
         return
 
 
+def _scan_tail_claude_title(path: Path, bytes_from_end: int = 131072) -> str | None:
+    """Return the latest Claude-set session title from a JSONL's tail.
+
+    Claude Code appends `{"type":"custom-title","customTitle":"...",}` and
+    `{"type":"agent-name",...}` entries when the user runs `/rename` or when
+    a hook returns `sessionTitle`. The latest wins.
+    """
+    try:
+        size = path.stat().st_size
+        with path.open("rb") as f:
+            if size > bytes_from_end:
+                f.seek(size - bytes_from_end)
+                f.readline()  # discard partial line at the seek point
+            data = f.read()
+    except OSError:
+        return None
+    text = data.decode("utf-8", errors="replace")
+    latest: str | None = None
+    for line in text.splitlines():
+        if '"custom-title"' not in line:
+            continue
+        try:
+            obj = json.loads(line)
+        except Exception:
+            continue
+        if obj.get("type") == "custom-title":
+            t = obj.get("customTitle")
+            if isinstance(t, str) and t.strip():
+                latest = t.strip()
+    return latest
+
+
 def _scan_session_meta(path: Path, deep: bool = False) -> dict | None:
     """Return minimal metadata for a session file.
 
@@ -172,9 +204,13 @@ def _scan_session_meta(path: Path, deep: bool = False) -> dict | None:
         # fall back to encoded project dir name
         cwd = path.parent.name.replace("--", ":/").replace("-", "/")
 
+    # Extract latest Claude-set session title from the tail of the file.
+    claude_title = _scan_tail_claude_title(path)
+
     return {
         "id": session_id,
         "title": title,
+        "claudeTitle": claude_title,
         "cwd": cwd,
         "branch": branch or "-",
         "model": model or "claude",

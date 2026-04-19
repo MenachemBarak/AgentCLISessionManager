@@ -16,6 +16,7 @@ function normalize(s) {
     id: s.id,
     title: s.title || '(untitled)',
     userLabel: s.userLabel || null,
+    claudeTitle: s.claudeTitle || null,
     cwd: s.cwd || '',
     branch: s.branch || '-',
     model: s.model || 'claude',
