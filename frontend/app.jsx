@@ -166,7 +166,10 @@ function App() {
         });
       }
     });
-    return () => { unsub(); bus.stop(); };
+    const unsubLabel = window.onUserLabelChanged && window.onUserLabelChanged((id, userLabel) => {
+      setSessions((list) => list.map((s) => s.id === id ? { ...s, userLabel } : s));
+    });
+    return () => { unsub(); if (unsubLabel) unsubLabel(); bus.stop(); };
   }, []);
 
   useEffectA(() => {

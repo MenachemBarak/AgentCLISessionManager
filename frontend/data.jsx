@@ -41,6 +41,18 @@ async function setUserLabel(id, userLabel) {
   } catch (e) { return null; }
 }
 
+const __labelListeners = new Set();
+function onUserLabelChanged(fn) {
+  __labelListeners.add(fn);
+  return () => __labelListeners.delete(fn);
+}
+async function saveUserLabel(id, userLabel) {
+  const res = await setUserLabel(id, userLabel);
+  const value = res ? (res.userLabel ?? null) : (userLabel || null);
+  __labelListeners.forEach((fn) => fn(id, value));
+  return value;
+}
+
 async function fetchStatus() {
   try { return await apiJson('/api/status'); } catch { return null; }
 }
@@ -175,4 +187,4 @@ function createSessionBus() {
 // Stub so existing design import still resolves
 function makeInitialSessions() { return []; }
 
-Object.assign(window, { makeInitialSessions, createSessionBus, openSession, fetchTranscript, fetchPreview, setUserLabel });
+Object.assign(window, { makeInitialSessions, createSessionBus, openSession, fetchTranscript, fetchPreview, setUserLabel, saveUserLabel, onUserLabelChanged });

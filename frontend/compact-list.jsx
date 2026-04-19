@@ -95,9 +95,11 @@ function CompactDropdown({ value, options, onChange, label }) {
 function CompactRow({ session, accent, selected, onSelect, onOpen, onHover, onLeave, isNew }) {
   const [hover, setHover] = useStateCL(false);
   const ref = useRefCL(null);
+  const sid8 = session.id.slice(0, 8);
   return (
     <div
       ref={ref}
+      data-testid={`session-row-${sid8}`}
       className={isNew ? 'row-enter' : ''}
       onClick={() => onSelect(session)}
       onMouseEnter={(e) => { setHover(true); onHover?.(session, ref.current); }}
@@ -187,13 +189,14 @@ function RowTitle({ session, accent }) {
     const v = value.trim();
     setEditing(false);
     if ((v || null) !== (session.userLabel || null)) {
-      await window.setUserLabel(session.id, v || null);
+      await window.saveUserLabel(session.id, v || null);
     }
   }
   if (editing) {
     return (
       <input
         ref={inputRef} value={value}
+        data-testid={`title-input-${session.id.slice(0,8)}`}
         onChange={(e) => setValue(e.target.value)}
         onClick={(e) => e.stopPropagation()}
         onBlur={save}
@@ -218,6 +221,7 @@ function RowTitle({ session, accent }) {
   const display = session.userLabel;
   return (
     <span
+      data-testid={`title-${session.id.slice(0,8)}`}
       onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
       onClick={(e) => { e.stopPropagation(); setEditing(true); }}
       style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, cursor: 'text' }}>
