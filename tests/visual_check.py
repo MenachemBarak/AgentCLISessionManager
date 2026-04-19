@@ -1,12 +1,15 @@
 """Quick visual test: load the app, screenshot, dump titles for active sessions."""
-import io, sys, json, time
+import io, os, sys, json, time
+from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 if hasattr(sys.stdout, "buffer"):
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
-SHOT = "M:/UserGlobalMemory/global-memory-plane/projects/claude-sessions-viewer/shots/pw/visual.png"
-URL = "http://127.0.0.1:8765/"
+SHOT_DIR = Path(__file__).resolve().parent.parent / "shots" / "pw"
+SHOT_DIR.mkdir(parents=True, exist_ok=True)
+SHOT = str(SHOT_DIR / "visual.png")
+URL = os.environ.get("VIEWER_URL", "http://127.0.0.1:8765/")
 
 with sync_playwright() as p:
     browser = p.chromium.launch(headless=True)

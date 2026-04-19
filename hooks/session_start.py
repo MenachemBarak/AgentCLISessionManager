@@ -8,6 +8,7 @@ label if set, else `cc-<sid8>`.
 Labels are user-set only (no auto-generation); stored at
 ~/.claude/viewer-labels.json by the viewer server.
 """
+
 from __future__ import annotations
 
 import json

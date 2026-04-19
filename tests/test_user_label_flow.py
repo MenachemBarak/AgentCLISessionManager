@@ -19,19 +19,20 @@ if hasattr(sys.stdout, "buffer"):
 if hasattr(sys.stderr, "buffer"):
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
 
-URL = "http://127.0.0.1:8765/"
+import os as _os
+URL = _os.environ.get("VIEWER_URL", "http://127.0.0.1:8765/")
 LABEL = f"playwright-test-{int(time.time())}"
 
 
 def api_get_label(session_id: str) -> dict:
-    with urllib.request.urlopen(f"http://127.0.0.1:8765/api/sessions/{session_id}/label") as r:
+    with urllib.request.urlopen(f"{URL.rstrip('/')}/api/sessions/{session_id}/label") as r:
         return json.loads(r.read())
 
 
 def api_clear_label(session_id: str) -> None:
     body = json.dumps({"userLabel": None}).encode()
     req = urllib.request.Request(
-        f"http://127.0.0.1:8765/api/sessions/{session_id}/label",
+        f"{URL.rstrip('/')}/api/sessions/{session_id}/label",
         data=body, method="PUT",
         headers={"Content-Type": "application/json"},
     )
@@ -42,7 +43,7 @@ def pick_target_session(page) -> tuple[str, str]:
     """Pick a stable idle session via API and find its row in the DOM.
     Returns (session_id, title_text_snippet_for_locator)."""
     # 1) via API: pick the 30th idle session — well inside the rendered list.
-    with urllib.request.urlopen("http://127.0.0.1:8765/api/sessions?limit=5000") as r:
+    with urllib.request.urlopen(f"{URL.rstrip('/')}/api/sessions?limit=5000") as r:
         payload = json.loads(r.read())
     # Pick idle sessions from top of the list (which are recent → likely in
     # visible folders) and exclude the huge agent-scraper folder which is
@@ -66,7 +67,8 @@ def pick_target_session(page) -> tuple[str, str]:
     return sid, snippet
 
 
-SHOT_DIR = "M:/UserGlobalMemory/global-memory-plane/projects/claude-sessions-viewer/shots/pw"
+from pathlib import Path as _Path
+SHOT_DIR = str(_Path(__file__).resolve().parent.parent / "shots" / "pw")
 
 def log(msg):
     print(f"[{time.strftime('%H:%M:%S')}] {msg}", flush=True)

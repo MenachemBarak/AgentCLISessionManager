@@ -1,6 +1,14 @@
 .venv/
 __pycache__/
 *.pyc
+*.pyo
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
 server.log
 shots/
 launcher/inspect.ps1
+.DS_Store
+Thumbs.db
+# local test artifacts
+tests/fixtures/claude-home/viewer-labels.json
