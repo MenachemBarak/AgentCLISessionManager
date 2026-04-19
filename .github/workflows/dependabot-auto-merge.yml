@@ -1,0 +1,45 @@
+name: Dependabot auto-merge
+
+# Auto-merges Dependabot PRs when:
+#  - the PR is a security update (CVE fix), OR
+#  - the PR is a patch-level version bump
+# Only merges after all required CI checks pass (GitHub enforces via branch protection).
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  auto-merge:
+    if: github.actor == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch Dependabot metadata
+        id: meta
+        uses: dependabot/fetch-metadata@v2
+        with:
+          github-token: "${{ secrets.GITHUB_TOKEN }}"
+
+      - name: Approve PR
+        if: >
+          steps.meta.outputs.update-type == 'version-update:semver-patch' ||
+          steps.meta.outputs.dependency-type == 'direct:production' &&
+          contains(steps.meta.outputs.dependency-names, '') == false ||
+          contains(fromJSON('["security"]'), steps.meta.outputs.update-type)
+        run: gh pr review --approve "$PR_URL"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Enable auto-merge (squash) for security + patch
+        if: >
+          steps.meta.outputs.update-type == 'version-update:semver-patch' ||
+          contains(fromJSON('["security"]'), steps.meta.outputs.update-type)
+        run: gh pr merge --auto --squash "$PR_URL"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

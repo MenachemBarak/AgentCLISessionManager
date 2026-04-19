@@ -91,6 +91,31 @@ def test_open_session_not_windows_returns_501(client, app_module, monkeypatch):
     assert r.status_code in (501, 404)  # 404 if index hasn't seen it yet
 
 
+def test_open_session_rejects_non_uuid_id(client, app_module, monkeypatch):
+    """Defense-in-depth: even on Windows, a non-UUID sessionId must be rejected
+    before reaching subprocess. Guards against CodeQL 'uncontrolled command line'."""
+    monkeypatch.setattr(app_module, "IS_WINDOWS", True)
+    # Inject a bogus session into the index so the 404 guard passes and we
+    # exercise the UUID validator.
+    app_module._INDEX["not-a-uuid; rm -rf /"] = {  # noqa: S101
+        "id": "not-a-uuid; rm -rf /",
+        "cwd": "/tmp/demo",
+        "path": str(app_module.PROJECTS_DIR / "-tmp-demo" / f"{SID_ONE}.jsonl"),
+    }
+    try:
+        r = client.post("/api/open", json={"sessionId": "not-a-uuid; rm -rf /", "mode": "tab"})
+        assert r.status_code == 400
+        assert "UUID" in r.json()["detail"]
+    finally:
+        app_module._INDEX.pop("not-a-uuid; rm -rf /", None)
+
+
+def test_open_session_rejects_bad_mode(client, app_module, monkeypatch):
+    monkeypatch.setattr(app_module, "IS_WINDOWS", True)
+    r = client.post("/api/open", json={"sessionId": SID_ONE, "mode": "evil; cmd"})
+    assert r.status_code == 400
+
+
 def test_hook_status_reports_paths(client):
     r = client.get("/api/hook/status")
     assert r.status_code == 200
