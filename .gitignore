@@ -12,3 +12,9 @@ launcher/inspect.ps1
 Thumbs.db
 # local test artifacts
 tests/fixtures/claude-home/viewer-labels.json
+# packaging build outputs
+dist/
+build/
+staging/
+# local-only exploration (e.g. cloned reference repos)
+playground/

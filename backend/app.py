@@ -25,6 +25,8 @@ from sse_starlette.sse import EventSourceResponse
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
+from backend.__version__ import __version__
+
 IS_WINDOWS = platform.system() == "Windows"
 
 # CLAUDE_HOME env overrides ~/.claude (used by tests to inject fixtures).
@@ -40,7 +42,8 @@ ACTIVE_DIR = CLAUDE_HOME / "sessions"
 SETTINGS_FILE = CLAUDE_HOME / "settings.json"
 LABELS_FILE = CLAUDE_HOME / "viewer-labels.json"
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-FRONTEND_DIR = PROJECT_ROOT / "frontend"
+# frontend/ ships inside the backend package so the wheel is self-contained.
+FRONTEND_DIR = Path(__file__).resolve().parent / "frontend"
 HOOK_SCRIPT = PROJECT_ROOT / "hooks" / "session_start.py"
 
 import threading  # noqa: E402
@@ -84,7 +87,7 @@ def _set_user_label(sid: str, label: str | None) -> None:
     _save_labels(d)
 
 
-app = FastAPI(title="Claude Sessions Viewer")
+app = FastAPI(title="Claude Sessions Viewer", version=__version__)
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 
@@ -332,6 +335,7 @@ def build_index() -> None:
 @app.get("/api/status")
 def status() -> dict[str, Any]:
     return {
+        "version": __version__,
         "ready": _INDEX_BUILT,
         "done": _INDEX_PROGRESS["done"],
         "total": _INDEX_PROGRESS["total"],

@@ -1,0 +1,9 @@
+include README.md LICENSE CHANGELOG.md SECURITY.md CONTRIBUTING.md
+recursive-include backend/frontend *.html *.jsx *.js *.css *.png *.svg *.ico
+recursive-include hooks *.py
+recursive-include launcher *.bat *.ps1
+prune tests
+prune playground
+prune .venv
+prune shots
+prune docs/screenshots
