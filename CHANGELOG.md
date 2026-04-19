@@ -6,6 +6,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.1] — 2026-04-19
+
+### Fixed
+- Release workflow verify job: use `--server-only` on the Linux runner
+  since headless CI has no GTK/Qt to back pywebview. The v0.4.0 build
+  produced correct wheel/sdist/zip/exe artifacts but the verify job
+  crashed when invoking `webview.start()` on a display-less Linux runner,
+  which skipped the release publication step.
+
 ## [0.4.0] — 2026-04-19
 
 ### Added
@@ -128,7 +137,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - "New tab" / "Split" buttons spawn `wt.exe ... claude --resume <uuid>`
   - Self-installing Desktop shortcut launcher
 
-[Unreleased]: https://github.com/MenachemBarak/AgentCLISessionManager/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/MenachemBarak/AgentCLISessionManager/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/MenachemBarak/AgentCLISessionManager/releases/tag/v0.4.1
 [0.4.0]: https://github.com/MenachemBarak/AgentCLISessionManager/releases/tag/v0.4.0
 [0.3.2]: https://github.com/MenachemBarak/AgentCLISessionManager/releases/tag/v0.3.2
 [0.3.1]: https://github.com/MenachemBarak/AgentCLISessionManager/releases/tag/v0.3.1
