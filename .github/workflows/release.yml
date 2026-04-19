@@ -127,16 +127,29 @@ jobs:
         id: changelog
         run: |
           VER="${{ needs.build.outputs.version }}"
-          # Grab the section between `## [VER]` and the next `## [`.
-          awk -v ver="[$VER]" '
-            $0 ~ "^## " ver { flag=1; next }
-            flag && /^## \[/ { exit }
-            flag { print }
-          ' CHANGELOG.md > release_notes.md
-          if [ ! -s release_notes.md ]; then
+          # Grab the section starting with `## [VER]` up to (but not including)
+          # the next `## [`. Use fgrep-style exact matching so regex metachars
+          # in brackets aren't interpreted.
+          python <<EOF > release_notes.md
+          import sys
+          ver = "$VER"
+          start = f"## [{ver}]"
+          out, capturing = [], False
+          for line in open("CHANGELOG.md", encoding="utf-8"):
+              if line.startswith(start):
+                  capturing = True
+                  continue
+              if capturing and line.startswith("## ["):
+                  break
+              if capturing:
+                  out.append(line)
+          sys.stdout.write("".join(out).strip() + "\n")
+          EOF
+          if [ ! -s release_notes.md ] || [ "$(wc -c < release_notes.md)" -lt 10 ]; then
             echo "No changelog entry for v$VER — aborting release creation." >&2
             exit 1
           fi
+          echo "--- release notes ---"
           cat release_notes.md
       - name: Create Release
         env:
