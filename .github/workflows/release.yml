@@ -27,7 +27,7 @@ jobs:
           cache: pip
 
       - name: Install build tools
-        run: pip install build==1.2.2 twine==5.1.1
+        run: pip install build==1.2.2 "twine>=6.1.0" packaging
 
       - name: Verify tag matches __version__
         id: version
