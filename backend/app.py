@@ -890,8 +890,25 @@ def open_session(req: OpenReq) -> dict[str, Any]:
         raise HTTPException(404, "not found")
     if not IS_WINDOWS:
         raise HTTPException(501, "open/new-tab is only supported on Windows")
-    cwd = meta["cwd"]
+
+    # Defense-in-depth: validate both inputs before they reach subprocess.
+    # Even with shell=False, we never want a crafted sessionId or cwd to
+    # influence the argv vector beyond what wt.exe/claude expects.
     sid = req.sessionId
+    if not _UUID_RE.match(sid):
+        raise HTTPException(400, "sessionId must be a UUID")
+    if req.mode not in ("tab", "split"):
+        raise HTTPException(400, "mode must be 'tab' or 'split'")
+
+    cwd_raw = meta["cwd"]
+    if not isinstance(cwd_raw, str) or not cwd_raw:
+        raise HTTPException(500, "session metadata has no cwd")
+    try:
+        cwd_path = Path(cwd_raw).resolve(strict=False)
+    except (OSError, ValueError) as e:
+        raise HTTPException(500, f"invalid cwd in session metadata: {e}") from e
+    cwd = str(cwd_path)
+
     sub = "sp" if req.mode == "split" else "nt"
     title = f"claude:{sid[:8]}"
     # wt.exe -w <named-window> {nt|sp} -d <cwd> --title <t> claude --resume <uuid>
@@ -910,15 +927,16 @@ def open_session(req: OpenReq) -> dict[str, Any]:
     ]
     try:
         subprocess.Popen(cmd, shell=False)
-        # Only "new tab" gets its own tab index; split panes share the current tab.
-        if sub == "nt":
-            _tab_indices[sid] = _next_tab_index
-            _next_tab_index += 1
-    except FileNotFoundError:
-        subprocess.Popen(
-            ["cmd.exe", "/c", "start", "cmd", "/k", f"cd /d {cwd} && claude --resume {sid}"],
-            shell=False,
-        )
+    except FileNotFoundError as e:
+        # Windows Terminal not installed — fail loudly instead of falling
+        # back to a cmd.exe invocation that would interpret cwd/sid as shell.
+        raise HTTPException(
+            503, "Windows Terminal (wt.exe) not found on PATH — install it to open sessions"
+        ) from e
+    # Only "new tab" gets its own tab index; split panes share the current tab.
+    if sub == "nt":
+        _tab_indices[sid] = _next_tab_index
+        _next_tab_index += 1
     return {"ok": True, "cmd": " ".join(cmd), "tabIndex": _tab_indices.get(sid)}
 
 
