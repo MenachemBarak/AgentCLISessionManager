@@ -28,7 +28,9 @@ def built_wheel(tmp_path_factory) -> Path:
     # --no-isolation would be faster but `build` is the public contract.
     subprocess.run(
         [sys.executable, "-m", "build", "--wheel", "--outdir", str(outdir), str(ROOT)],
-        check=True, capture_output=True, text=True,
+        check=True,
+        capture_output=True,
+        text=True,
     )
     wheels = list(outdir.glob("claude_sessions_viewer-*.whl"))
     assert len(wheels) == 1, f"expected exactly 1 wheel, got {wheels}"
@@ -37,6 +39,7 @@ def built_wheel(tmp_path_factory) -> Path:
 
 def test_wheel_filename_matches_version(built_wheel: Path) -> None:
     from backend.__version__ import __version__
+
     assert built_wheel.name == f"claude_sessions_viewer-{__version__}-py3-none-any.whl"
 
 
@@ -57,9 +60,7 @@ def test_wheel_includes_hook(built_wheel: Path) -> None:
 
 def test_wheel_registers_cli_entry_point(built_wheel: Path) -> None:
     with zipfile.ZipFile(built_wheel) as zf:
-        entry_points = zf.read(
-            next(n for n in zf.namelist() if n.endswith("entry_points.txt"))
-        ).decode()
+        entry_points = zf.read(next(n for n in zf.namelist() if n.endswith("entry_points.txt"))).decode()
     assert "[console_scripts]" in entry_points
     assert "claude-sessions-viewer" in entry_points
     assert "backend.cli:main" in entry_points
@@ -67,9 +68,8 @@ def test_wheel_registers_cli_entry_point(built_wheel: Path) -> None:
 
 def test_wheel_metadata_version_matches(built_wheel: Path) -> None:
     from backend.__version__ import __version__
+
     with zipfile.ZipFile(built_wheel) as zf:
-        metadata = zf.read(
-            next(n for n in zf.namelist() if n.endswith("METADATA"))
-        ).decode()
+        metadata = zf.read(next(n for n in zf.namelist() if n.endswith("METADATA"))).decode()
     assert f"Version: {__version__}" in metadata
     assert "Name: claude-sessions-viewer" in metadata
