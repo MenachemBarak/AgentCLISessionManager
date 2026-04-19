@@ -37,3 +37,22 @@ user's workstation. Out-of-scope scenarios:
 - No credentials are stored by the app — labels are the only mutable state
 - Subprocess invocations (`wt.exe`, `powershell.exe`) use `shell=False` and
   never interpolate untrusted strings into shell arguments
+
+### `/api/open` command-injection defenses (reviewed false-positive)
+
+`backend/app.py::open_session` passes a session ID and `cwd` to `wt.exe`.
+GitHub Advanced Security's CodeQL flags this as potential command injection
+via data flow. The finding is suppressed via `.github/codeql/codeql-config.yml`
+because every input is sanitized before reaching `subprocess.Popen`:
+
+1. **`sessionId`** — must match a strict UUID regex (`_UUID_RE`); the matched
+   substring is extracted as a fresh string before use.
+2. **`mode`** — must be exactly `"tab"` or `"split"` (enum whitelist), mapped
+   to a constant subcommand (`"nt"` or `"sp"`).
+3. **`cwd`** — canonicalized via `pathlib.Path(...).resolve()` before use.
+4. **`shell=False`** — no shell interpretation of argv.
+5. The previous `cmd.exe /k` fallback (which DID interpolate into a shell
+   string) was removed. Missing `wt.exe` now returns 503 instead.
+
+See `tests/test_backend_api.py::test_open_session_rejects_non_uuid_id` for
+the regression test covering crafted session IDs.

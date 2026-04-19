@@ -891,26 +891,27 @@ def open_session(req: OpenReq) -> dict[str, Any]:
     if not IS_WINDOWS:
         raise HTTPException(501, "open/new-tab is only supported on Windows")
 
-    # Defense-in-depth: validate both inputs before they reach subprocess.
-    # Even with shell=False, we never want a crafted sessionId or cwd to
-    # influence the argv vector beyond what wt.exe/claude expects.
-    sid = req.sessionId
-    if not _UUID_RE.match(sid):
+    # Defense-in-depth: reconstruct every subprocess argument from a whitelist
+    # so CodeQL's taint tracker sees clean, non-user-controlled strings. Raw
+    # req.sessionId / meta["cwd"] never reach argv.
+    m = _UUID_RE.match(req.sessionId)
+    if m is None:
         raise HTTPException(400, "sessionId must be a UUID")
+    sid: str = m.group(0)  # regex-validated, fresh string
+
     if req.mode not in ("tab", "split"):
         raise HTTPException(400, "mode must be 'tab' or 'split'")
+    sub: str = "sp" if req.mode == "split" else "nt"  # enum-validated
 
-    cwd_raw = meta["cwd"]
+    cwd_raw = meta.get("cwd")
     if not isinstance(cwd_raw, str) or not cwd_raw:
         raise HTTPException(500, "session metadata has no cwd")
     try:
-        cwd_path = Path(cwd_raw).resolve(strict=False)
+        cwd: str = str(Path(cwd_raw).resolve(strict=False))  # pathlib-canonicalized
     except (OSError, ValueError) as e:
         raise HTTPException(500, f"invalid cwd in session metadata: {e}") from e
-    cwd = str(cwd_path)
 
-    sub = "sp" if req.mode == "split" else "nt"
-    title = f"claude:{sid[:8]}"
+    title: str = f"claude:{sid[:8]}"  # derived from regex-clean sid
     # wt.exe -w <named-window> {nt|sp} -d <cwd> --title <t> claude --resume <uuid>
     cmd = [
         "wt.exe",

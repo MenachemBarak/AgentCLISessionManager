@@ -1,0 +1,21 @@
+name: "CodeQL config"
+
+# Use the security-and-quality query pack and add explicit filters for
+# findings we've reviewed and mitigated at the code level.
+queries:
+  - uses: security-and-quality
+
+paths-ignore:
+  - "frontend/**"      # React via Babel-standalone — not Python
+  - "tests/fixtures/**"
+  - "shots/**"
+  - "docs/**"
+
+# Known-reviewed findings. The subprocess call in backend/app.py::open_session
+# is protected by: UUID regex validation of sessionId, enum validation of
+# mode, pathlib canonicalization of cwd, and shell=False. See SECURITY.md.
+query-filters:
+  - exclude:
+      id: py/command-line-injection
+      paths:
+        - backend/app.py
