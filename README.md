@@ -52,7 +52,7 @@ Pick whichever fits. All three install paths are built and verified by the
 ### 1. `pipx` (recommended for CLI use)
 
 ```bash
-pipx install git+https://github.com/MenachemBarak/AgentCLISessionManager.git@v0.3.0
+pipx install git+https://github.com/MenachemBarak/AgentCLISessionManager.git@v0.3.1
 claude-sessions-viewer
 ```
 
