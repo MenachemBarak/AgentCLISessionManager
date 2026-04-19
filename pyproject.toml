@@ -41,6 +41,34 @@ ignore = [
 [tool.ruff.format]
 quote-style = "double"
 
+[tool.mypy]
+python_version = "3.10"
+# Pragmatic strictness: catch real bugs without requiring every JSON blob to
+# be a TypedDict. Public functions have annotations; internal helpers use
+# inferred types where JSONL shape is inherently Any.
+check_untyped_defs = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+warn_unreachable = true
+no_implicit_optional = true
+disallow_untyped_defs = true
+files = ["backend", "hooks"]
+exclude = ["tests/fixtures", "\\.venv"]
+
+[[tool.mypy.overrides]]
+# Third-party modules without type stubs. uiautomation/comtypes are Windows-only.
+module = ["uiautomation", "comtypes.*", "watchdog.*", "sse_starlette.*"]
+ignore_missing_imports = true
+
+[tool.bandit]
+# Production security scanning; exclude tests & fixtures.
+exclude_dirs = ["tests", ".venv", "frontend", "shots"]
+skips = [
+    "B104",  # hardcoded 127.0.0.1 bind — this is the intended loopback-only server
+    "B603",  # subprocess call — inputs are validated (session IDs are UUIDs)
+    "B607",  # partial path in subprocess — wt.exe/powershell are resolved via PATH by design
+]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q --ignore=tests/test_user_label_flow.py --ignore=tests/visual_check.py"

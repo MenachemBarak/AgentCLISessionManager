@@ -48,14 +48,15 @@ import threading  # noqa: E402
 _LABELS_LOCK = threading.Lock()
 
 
-def _load_labels() -> dict:
+def _load_labels() -> dict[str, Any]:
     try:
-        return json.loads(LABELS_FILE.read_text(encoding="utf-8"))
+        data = json.loads(LABELS_FILE.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
     except Exception:
         return {}
 
 
-def _save_labels(d: dict) -> None:
+def _save_labels(d: dict[str, Any]) -> None:
     with _LABELS_LOCK:
         LABELS_FILE.parent.mkdir(parents=True, exist_ok=True)
         LABELS_FILE.write_text(json.dumps(d, indent=2), encoding="utf-8")
@@ -68,7 +69,8 @@ def _get_user_label(sid: str) -> str | None:
 
 def _set_user_label(sid: str, label: str | None) -> None:
     d = _load_labels()
-    entry = d.get(sid) if isinstance(d.get(sid), dict) else {}
+    raw = d.get(sid)
+    entry: dict[str, Any] = raw if isinstance(raw, dict) else {}
     if label is None or not label.strip():
         entry.pop("userLabel", None)
         if not entry:
@@ -99,7 +101,7 @@ def _extract_text(content: Any) -> str:
     return ""
 
 
-def _is_meta(line_obj: dict) -> bool:
+def _is_meta(line_obj: dict[str, Any]) -> bool:
     if line_obj.get("isMeta"):
         return True
     msg = line_obj.get("message") or {}
@@ -112,7 +114,7 @@ def _is_meta(line_obj: dict) -> bool:
     return False
 
 
-def _iter_lines(path: Path) -> Iterator[dict]:
+def _iter_lines(path: Path) -> Iterator[dict[str, Any]]:
     try:
         with path.open("r", encoding="utf-8", errors="replace") as f:
             for line in f:
@@ -159,7 +161,7 @@ def _scan_tail_claude_title(path: Path, bytes_from_end: int = 131072) -> str | N
     return latest
 
 
-def _scan_session_meta(path: Path, deep: bool = False) -> dict | None:
+def _scan_session_meta(path: Path, deep: bool = False) -> dict[str, Any] | None:
     """Return minimal metadata for a session file.
 
     deep=False: only first ~40 lines (cheap, for list view).
@@ -264,9 +266,9 @@ def _activity_for(path: Path) -> str:
 
 
 # ─────────────────────── Session index (cache) ───────────────────────
-_INDEX: dict[str, dict] = {}
+_INDEX: dict[str, dict[str, Any]] = {}
 _INDEX_BUILT = False
-_INDEX_PROGRESS = {"done": 0, "total": 0, "phase": "idle"}
+_INDEX_PROGRESS: dict[str, Any] = {"done": 0, "total": 0, "phase": "idle"}
 
 
 _UUID_RE = __import__("re").compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
@@ -328,7 +330,7 @@ def build_index() -> None:
 
 
 @app.get("/api/status")
-def status():
+def status() -> dict[str, Any]:
     return {
         "ready": _INDEX_BUILT,
         "done": _INDEX_PROGRESS["done"],
@@ -351,14 +353,14 @@ async def _startup() -> None:
 
 
 @app.get("/api/sessions")
-def list_sessions(limit: int = 1000, offset: int = 0):
+def list_sessions(limit: int = 1000, offset: int = 0) -> dict[str, Any]:
     if not _INDEX_BUILT:
         build_index()
     active_ids = _get_active_session_ids()
     labels = _load_labels()
-    items = []
+    items: list[dict[str, Any]] = []
     for meta in _INDEX.values():
-        m = {k: v for k, v in meta.items() if not k.startswith("_")}
+        m: dict[str, Any] = {k: v for k, v in meta.items() if not k.startswith("_")}
         if m["id"] in active_ids:
             m["active"] = True
             m["activityLabel"] = _activity_for(Path(meta["path"]))
@@ -373,7 +375,7 @@ def list_sessions(limit: int = 1000, offset: int = 0):
 
 
 @app.get("/api/sessions/{sid}/label")
-def get_session_label(sid: str):
+def get_session_label(sid: str) -> dict[str, Any]:
     return {"id": sid, "userLabel": _get_user_label(sid)}
 
 
@@ -382,13 +384,13 @@ class UserLabelReq(BaseModel):
 
 
 @app.put("/api/sessions/{sid}/label")
-def set_session_user_label(sid: str, req: UserLabelReq):
+def set_session_user_label(sid: str, req: UserLabelReq) -> dict[str, Any]:
     _set_user_label(sid, req.userLabel)
     return {"id": sid, "userLabel": _get_user_label(sid)}
 
 
 @app.get("/api/sessions/{session_id}/preview")
-def session_preview(session_id: str):
+def session_preview(session_id: str) -> dict[str, Any]:
     meta = _INDEX.get(session_id)
     if not meta:
         raise HTTPException(404, "not found")
@@ -399,7 +401,7 @@ def session_preview(session_id: str):
 
 
 @app.get("/api/sessions/{session_id}/transcript")
-def session_transcript(session_id: str, limit: int = 400):
+def session_transcript(session_id: str, limit: int = 400) -> dict[str, Any]:
     meta = _INDEX.get(session_id)
     if not meta:
         raise HTTPException(404, "not found")
@@ -474,7 +476,7 @@ def _find_window_for_pid(pid: int) -> int | None:
     pid_set = set(pids)
     found: list[int] = []
 
-    def cb(hwnd, _lparam):
+    def cb(hwnd: int, _lparam: int) -> bool:
         if not IsWindowVisible(hwnd):
             return True
         wpid = wintypes.DWORD()
@@ -614,7 +616,7 @@ def _uia_select_tab(session_id: str) -> dict:
         # Enumerate descendants looking for any TabItem with matching Name.
         matched_tab = None
 
-        def _walk(el, depth=0):
+        def _walk(el: Any, depth: int = 0) -> None:
             nonlocal matched_tab
             if matched_tab or depth > 10:
                 return
@@ -645,7 +647,7 @@ def _uia_select_tab(session_id: str) -> dict:
             except Exception:
                 pass
         try:
-            win.SetActive()
+            win.SetActive()  # type: ignore[attr-defined]
         except Exception:
             pass
         hwnd = getattr(win, "NativeWindowHandle", None)
@@ -655,7 +657,7 @@ def _uia_select_tab(session_id: str) -> dict:
 
 
 @app.post("/api/focus")
-def focus_session(req: FocusReq):
+def focus_session(req: FocusReq) -> dict[str, Any]:
     # find the pid whose session matches
     target_pid: int | None = None
     if ACTIVE_DIR.is_dir():
@@ -797,7 +799,7 @@ def _hook_command() -> str:
 
 
 @app.get("/api/hook/status")
-def hook_status():
+def hook_status() -> dict[str, Any]:
     data = _load_settings()
     hooks = (data.get("hooks") or {}).get("SessionStart") or []
     installed = any(h.get("__mark") == HOOK_MARKER for h in hooks if isinstance(h, dict))
@@ -810,7 +812,7 @@ def hook_status():
 
 
 @app.post("/api/hook/install")
-def hook_install():
+def hook_install() -> dict[str, Any]:
     if not HOOK_SCRIPT.exists():
         raise HTTPException(500, f"hook script missing at {HOOK_SCRIPT}")
     data = _load_settings()
@@ -829,7 +831,7 @@ def hook_install():
 
 
 @app.post("/api/hook/uninstall")
-def hook_uninstall():
+def hook_uninstall() -> dict[str, Any]:
     data = _load_settings()
     hooks_cfg = data.get("hooks") or {}
     changed = False
@@ -863,7 +865,7 @@ def _find_wt_window() -> int | None:
 
     found: list[int] = []
 
-    def cb(hwnd, _lparam):
+    def cb(hwnd: int, _lparam: int) -> bool:
         if not IsWindowVisible(hwnd):
             return True
         wpid = wintypes.DWORD()
@@ -881,7 +883,7 @@ def _find_wt_window() -> int | None:
 
 
 @app.post("/api/open")
-def open_session(req: OpenReq):
+def open_session(req: OpenReq) -> dict[str, Any]:
     global _next_tab_index
     meta = _INDEX.get(req.sessionId)
     if not meta:
@@ -921,7 +923,7 @@ def open_session(req: OpenReq):
 
 
 # ─────────────────────── SSE live updates ───────────────────────
-_event_queue: asyncio.Queue | None = None
+_event_queue: asyncio.Queue[dict[str, Any]] | None = None
 _event_loop: asyncio.AbstractEventLoop | None = None
 
 
@@ -963,16 +965,16 @@ class _Watcher(FileSystemEventHandler):
             except RuntimeError:
                 pass
 
-    def on_created(self, event):
+    def on_created(self, event: Any) -> None:
         if not event.is_directory:
             self._push(event.src_path, "created")
 
-    def on_modified(self, event):
+    def on_modified(self, event: Any) -> None:
         if not event.is_directory:
             self._push(event.src_path, "modified")
 
 
-_observer: Observer | None = None
+_observer: Any = None  # watchdog.observers.Observer has no importable type alias
 
 
 def start_watcher() -> None:
@@ -987,13 +989,13 @@ def start_watcher() -> None:
 
 
 @app.get("/api/stream")
-async def stream_events():
+async def stream_events() -> EventSourceResponse:
     global _event_queue, _event_loop
     if _event_queue is None:
         _event_queue = asyncio.Queue()
         _event_loop = asyncio.get_running_loop()
 
-    async def gen():
+    async def gen() -> Any:
         yield {"event": "hello", "data": json.dumps({"ok": True})}
         while True:
             ev = await _event_queue.get()

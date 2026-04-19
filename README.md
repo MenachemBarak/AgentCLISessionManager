@@ -1,11 +1,35 @@
 # AgentCLISessionManager — Claude Sessions Viewer
 
 [![CI](https://github.com/MenachemBarak/AgentCLISessionManager/actions/workflows/ci.yml/badge.svg)](https://github.com/MenachemBarak/AgentCLISessionManager/actions/workflows/ci.yml)
+[![Security](https://github.com/MenachemBarak/AgentCLISessionManager/actions/workflows/security.yml/badge.svg)](https://github.com/MenachemBarak/AgentCLISessionManager/actions/workflows/security.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![Checked with mypy](https://img.shields.io/badge/mypy-strict-blue.svg)](http://mypy-lang.org/)
+[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 
 Desktop-launchable web UI that lists, previews, and resumes your [Claude Code](https://claude.com/claude-code)
 sessions on Windows. Reads sessions directly from `~/.claude/projects/**/*.jsonl` — no API tokens,
 no cloud round-trip.
+
+## Screenshots
+
+> Captured against the synthetic `tests/fixtures/claude-home` fixture —
+> regenerate any time with `python scripts/capture_demo_screenshots.py`.
+
+![Main view](docs/screenshots/main.png)
+
+<details>
+<summary>More views</summary>
+
+**Hover preview** — peek at the first user messages of any session without opening it:
+
+![Hover preview](docs/screenshots/hover-preview.png)
+
+**Transcript** — click a session to read its history side-by-side:
+
+![Transcript](docs/screenshots/transcript.png)
+
+</details>
 
 ## Features
 
@@ -85,6 +109,22 @@ two sample JSONL sessions plus a sub-agent file that must be filtered out. This 
 
 Playwright end-to-end tests (`tests/test_user_label_flow.py`, `tests/visual_check.py`) are kept
 local-only — they require a running viewer + Chrome and are excluded from the default pytest run.
+
+## Production hardening
+
+| Check                  | Tool                              | Cadence                       |
+|------------------------|-----------------------------------|-------------------------------|
+| Lint                   | ruff                              | pre-commit + CI               |
+| Format                 | ruff-format                       | pre-commit + CI               |
+| Type-check             | mypy (strict-ish)                 | pre-commit + CI               |
+| SAST                   | bandit                            | pre-commit + CI + weekly cron |
+| CVE scan (Python deps) | pip-audit                         | CI + weekly cron              |
+| Code scanning          | GitHub CodeQL (security-and-quality) | CI + weekly cron           |
+| Dep freshness          | Dependabot (pip + actions)        | weekly                        |
+| Auto-merge fixes       | `.github/workflows/dependabot-auto-merge.yml` | on every Dependabot PR (security + patch only, after CI green) |
+
+See [`SECURITY.md`](SECURITY.md) for vulnerability disclosure and
+[`CONTRIBUTING.md`](CONTRIBUTING.md) for the dev loop.
 
 ## License
 
