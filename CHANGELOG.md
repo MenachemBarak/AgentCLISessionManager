@@ -6,6 +6,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.2] — 2026-04-19
+
+### Fixed
+- Release workflow: changelog extractor now uses a Python snippet instead of
+  awk so bracketed headers (e.g. `## [0.3.2]`) aren't parsed as regex
+  character classes. v0.3.1 build+verify succeeded but release-notes step
+  produced an empty file.
+
 ## [0.3.1] — 2026-04-19
 
 ### Fixed
@@ -101,7 +109,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - "New tab" / "Split" buttons spawn `wt.exe ... claude --resume <uuid>`
   - Self-installing Desktop shortcut launcher
 
-[Unreleased]: https://github.com/MenachemBarak/AgentCLISessionManager/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/MenachemBarak/AgentCLISessionManager/compare/v0.3.2...HEAD
+[0.3.2]: https://github.com/MenachemBarak/AgentCLISessionManager/releases/tag/v0.3.2
 [0.3.1]: https://github.com/MenachemBarak/AgentCLISessionManager/releases/tag/v0.3.1
 [0.3.0]: https://github.com/MenachemBarak/AgentCLISessionManager/releases/tag/v0.3.0
 [0.2.0]: https://github.com/MenachemBarak/AgentCLISessionManager/releases/tag/v0.2.0
