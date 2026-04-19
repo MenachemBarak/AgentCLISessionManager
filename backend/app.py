@@ -3,36 +3,48 @@
 Reads Claude Code JSONL sessions from ~/.claude/projects/**/*.jsonl and serves
 them to the React frontend. Live updates via SSE + watchdog.
 """
+
 from __future__ import annotations
 
 import asyncio
 import json
 import os
+import platform
 import subprocess
 import time
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
 
 import psutil
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
-HOME = Path(os.path.expanduser("~"))
-PROJECTS_DIR = HOME / ".claude" / "projects"
-ACTIVE_DIR = HOME / ".claude" / "sessions"
-SETTINGS_FILE = HOME / ".claude" / "settings.json"
-LABELS_FILE = HOME / ".claude" / "viewer-labels.json"
+IS_WINDOWS = platform.system() == "Windows"
+
+# CLAUDE_HOME env overrides ~/.claude (used by tests to inject fixtures).
+_CLAUDE_HOME_ENV = os.environ.get("CLAUDE_HOME")
+if _CLAUDE_HOME_ENV:
+    CLAUDE_HOME = Path(_CLAUDE_HOME_ENV).resolve()
+else:
+    CLAUDE_HOME = Path(os.path.expanduser("~")) / ".claude"
+
+HOME = CLAUDE_HOME.parent
+PROJECTS_DIR = CLAUDE_HOME / "projects"
+ACTIVE_DIR = CLAUDE_HOME / "sessions"
+SETTINGS_FILE = CLAUDE_HOME / "settings.json"
+LABELS_FILE = CLAUDE_HOME / "viewer-labels.json"
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 FRONTEND_DIR = PROJECT_ROOT / "frontend"
 HOOK_SCRIPT = PROJECT_ROOT / "hooks" / "session_start.py"
 
 import threading  # noqa: E402
+
 _LABELS_LOCK = threading.Lock()
 
 
@@ -69,10 +81,9 @@ def _set_user_label(sid: str, label: str | None) -> None:
         d[sid] = entry
     _save_labels(d)
 
+
 app = FastAPI(title="Claude Sessions Viewer")
-app.add_middleware(
-    CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"]
-)
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 
 # ─────────────────────── JSONL parsing ───────────────────────
@@ -180,6 +191,7 @@ def _scan_session_meta(path: Path, deep: bool = False) -> dict | None:
             # parse ISO → ms
             try:
                 from datetime import datetime
+
                 created_ms = int(datetime.fromisoformat(ts.replace("Z", "+00:00")).timestamp() * 1000)
             except Exception:
                 pass
@@ -257,9 +269,7 @@ _INDEX_BUILT = False
 _INDEX_PROGRESS = {"done": 0, "total": 0, "phase": "idle"}
 
 
-_UUID_RE = __import__("re").compile(
-    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
-)
+_UUID_RE = __import__("re").compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 
 
 def _all_jsonl() -> list[Path]:
@@ -410,6 +420,7 @@ def session_transcript(session_id: str, limit: int = 400):
         if ts_raw:
             try:
                 from datetime import datetime
+
                 ts = int(datetime.fromisoformat(ts_raw.replace("Z", "+00:00")).timestamp() * 1000)
             except Exception:
                 pass
@@ -422,6 +433,8 @@ def session_transcript(session_id: str, limit: int = 400):
 def _find_window_for_pid(pid: int) -> int | None:
     """Walk up the process tree to find an ancestor with a visible top-level
     window, and return its HWND. Returns None if nothing focusable found."""
+    if not IS_WINDOWS:
+        return None
     import ctypes
     from ctypes import wintypes
 
@@ -481,8 +494,9 @@ def _focus_hwnd(hwnd: int) -> bool:
     workaround plus a simulated ALT keypress (tricks the OS into allowing the
     switch) and a minimize/restore if the window is iconic.
     """
+    if not IS_WINDOWS:
+        return False
     import ctypes
-    from ctypes import wintypes
 
     user32 = ctypes.windll.user32
     kernel32 = ctypes.windll.kernel32
@@ -570,6 +584,8 @@ def _uia_select_tab(session_id: str) -> dict:
     stamps the tab title via OSC-0). Falls back gracefully if UIA isn't
     available or no matching tab is found.
     """
+    if not IS_WINDOWS:
+        return {"ok": False, "error": "uiautomation is Windows-only"}
     try:
         import uiautomation as auto
     except Exception as e:
@@ -597,6 +613,7 @@ def _uia_select_tab(session_id: str) -> dict:
             continue
         # Enumerate descendants looking for any TabItem with matching Name.
         matched_tab = None
+
         def _walk(el, depth=0):
             nonlocal matched_tab
             if matched_tab or depth > 10:
@@ -614,6 +631,7 @@ def _uia_select_tab(session_id: str) -> dict:
                     _walk(c, depth + 1)
             except Exception:
                 pass
+
         _walk(win)
         if matched_tab is None:
             continue
@@ -631,8 +649,7 @@ def _uia_select_tab(session_id: str) -> dict:
         except Exception:
             pass
         hwnd = getattr(win, "NativeWindowHandle", None)
-        return {"ok": True, "hwnd": int(hwnd) if hwnd else None,
-                "windowTitle": win.Name, "tabName": tab.Name}
+        return {"ok": True, "hwnd": int(hwnd) if hwnd else None, "windowTitle": win.Name, "tabName": tab.Name}
 
     return {"ok": False, "error": "no matching tab"}
 
@@ -659,10 +676,17 @@ def focus_session(req: FocusReq):
     uia = _uia_select_tab(req.sessionId)
     if uia.get("ok"):
         focus_methods.append("uia:select-tab-by-name")
-        return {"ok": True, "pid": None, "hwnd": uia.get("hwnd"),
-                "tabIndex": None, "focusedTab": True,
-                "appActivate": False, "ctypes": False,
-                "uia": True, "methods": focus_methods}
+        return {
+            "ok": True,
+            "pid": None,
+            "hwnd": uia.get("hwnd"),
+            "tabIndex": None,
+            "focusedTab": True,
+            "appActivate": False,
+            "ctypes": False,
+            "uia": True,
+            "methods": focus_methods,
+        }
 
     # Strategy 1: wt.exe focus-tab by tracked index (for tabs opened via viewer).
     tab_idx = _tab_indices.get(req.sessionId)
@@ -672,7 +696,8 @@ def focus_session(req: FocusReq):
         try:
             subprocess.run(
                 ["wt.exe", "-w", WT_WINDOW, "focus-tab", "--target", str(tab_idx)],
-                check=False, timeout=3,
+                check=False,
+                timeout=3,
             )
             focused_tab = True
             focus_methods.append(f"wt:{WT_WINDOW}:tab{tab_idx}")
@@ -683,7 +708,8 @@ def focus_session(req: FocusReq):
         try:
             subprocess.run(
                 ["wt.exe", "--window", "0", "focus-tab"],
-                check=False, timeout=3,
+                check=False,
+                timeout=3,
             )
             focused_tab = True
             focus_methods.append("wt:0:current-tab")
@@ -703,13 +729,18 @@ def focus_session(req: FocusReq):
         try:
             r = subprocess.run(
                 [
-                    "powershell", "-NoProfile", "-WindowStyle", "Hidden", "-Command",
+                    "powershell",
+                    "-NoProfile",
+                    "-WindowStyle",
+                    "Hidden",
+                    "-Command",
                     f"$r = (New-Object -ComObject WScript.Shell).AppActivate({target_pid}); "
                     f"if (-not $r) {{ exit 1 }}",
                 ],
-                check=False, timeout=3,
+                check=False,
+                timeout=3,
             )
-            ps_ok = (r.returncode == 0)
+            ps_ok = r.returncode == 0
             if ps_ok:
                 focus_methods.append("powershell:AppActivate")
         except Exception:
@@ -727,10 +758,15 @@ def focus_session(req: FocusReq):
 
     ok = focused_tab or ps_ok or ct_ok
     return {
-        "ok": ok, "pid": target_pid, "hwnd": hwnd,
-        "tabIndex": tab_idx, "focusedTab": focused_tab,
-        "appActivate": ps_ok, "ctypes": ct_ok,
-        "uia": False, "uiaError": uia.get("error"),
+        "ok": ok,
+        "pid": target_pid,
+        "hwnd": hwnd,
+        "tabIndex": tab_idx,
+        "focusedTab": focused_tab,
+        "appActivate": ps_ok,
+        "ctypes": ct_ok,
+        "uia": False,
+        "uiaError": uia.get("error"),
         "methods": focus_methods,
     }
 
@@ -765,8 +801,12 @@ def hook_status():
     data = _load_settings()
     hooks = (data.get("hooks") or {}).get("SessionStart") or []
     installed = any(h.get("__mark") == HOOK_MARKER for h in hooks if isinstance(h, dict))
-    return {"installed": installed, "settingsFile": str(SETTINGS_FILE),
-            "hookScript": str(HOOK_SCRIPT), "command": _hook_command()}
+    return {
+        "installed": installed,
+        "settingsFile": str(SETTINGS_FILE),
+        "hookScript": str(HOOK_SCRIPT),
+        "command": _hook_command(),
+    }
 
 
 @app.post("/api/hook/install")
@@ -810,6 +850,8 @@ def hook_uninstall():
 
 
 def _find_wt_window() -> int | None:
+    if not IS_WINDOWS:
+        return None
     import ctypes
     from ctypes import wintypes
 
@@ -844,15 +886,25 @@ def open_session(req: OpenReq):
     meta = _INDEX.get(req.sessionId)
     if not meta:
         raise HTTPException(404, "not found")
+    if not IS_WINDOWS:
+        raise HTTPException(501, "open/new-tab is only supported on Windows")
     cwd = meta["cwd"]
     sid = req.sessionId
     sub = "sp" if req.mode == "split" else "nt"
     title = f"claude:{sid[:8]}"
     # wt.exe -w <named-window> {nt|sp} -d <cwd> --title <t> claude --resume <uuid>
     cmd = [
-        "wt.exe", "-w", WT_WINDOW, sub,
-        "-d", cwd, "--title", title,
-        "claude", "--resume", sid,
+        "wt.exe",
+        "-w",
+        WT_WINDOW,
+        sub,
+        "-d",
+        cwd,
+        "--title",
+        title,
+        "claude",
+        "--resume",
+        sid,
     ]
     try:
         subprocess.Popen(cmd, shell=False)
@@ -865,8 +917,7 @@ def open_session(req: OpenReq):
             ["cmd.exe", "/c", "start", "cmd", "/k", f"cd /d {cwd} && claude --resume {sid}"],
             shell=False,
         )
-    return {"ok": True, "cmd": " ".join(cmd),
-            "tabIndex": _tab_indices.get(sid)}
+    return {"ok": True, "cmd": " ".join(cmd), "tabIndex": _tab_indices.get(sid)}
 
 
 # ─────────────────────── SSE live updates ───────────────────────

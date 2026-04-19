@@ -1,0 +1,2 @@
+{"type":"user","timestamp":"2026-02-01T09:00:00Z","cwd":"/tmp/demo","gitBranch":"dev","message":{"content":"Second session opener","model":"claude-opus-4-7"}}
+{"type":"assistant","timestamp":"2026-02-01T09:00:10Z","message":{"content":[{"type":"text","text":"Working on it"}]}}

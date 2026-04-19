@@ -1,0 +1,50 @@
+[project]
+name = "claude-sessions-viewer"
+version = "0.2.0"
+description = "Desktop-launchable web UI to list, preview, and resume your Claude Code sessions"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+authors = [{ name = "AgentCLISessionManager contributors" }]
+keywords = ["claude-code", "sessions", "desktop", "fastapi"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Web Environment",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: Microsoft :: Windows",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+
+[project.urls]
+Repository = "https://github.com/MenachemBarak/AgentCLISessionManager"
+
+[tool.ruff]
+line-length = 110
+target-version = "py310"
+extend-exclude = [
+    ".venv", "frontend", "shots", "tests/fixtures",
+    # Playwright scripts — local-only utilities, not part of the CI suite.
+    "tests/test_user_label_flow.py", "tests/visual_check.py",
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+ignore = [
+    "E501",   # line too long — already 110 via line-length
+    "E402",   # module-level imports after top (we use conditional imports)
+    "B008",   # default-arg calls — FastAPI uses Depends/Body default
+]
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --ignore=tests/test_user_label_flow.py --ignore=tests/visual_check.py"
+# Playwright e2e tests need a running server + browser; they live in the same
+# tests/ dir but are excluded from the default CI run (see addopts).
+norecursedirs = ["tests/fixtures"]
+python_files = ["test_*.py"]
