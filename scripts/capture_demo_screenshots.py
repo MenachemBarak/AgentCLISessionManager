@@ -40,10 +40,18 @@ def main() -> int:
 
     server = subprocess.Popen(
         [
-            sys.executable, "-m", "uvicorn", "app:app",
-            "--app-dir", str(ROOT / "backend"),
-            "--host", "127.0.0.1", "--port", str(port),
-            "--log-level", "warning",
+            sys.executable,
+            "-m",
+            "uvicorn",
+            "app:app",
+            "--app-dir",
+            str(ROOT / "backend"),
+            "--host",
+            "127.0.0.1",
+            "--port",
+            str(port),
+            "--log-level",
+            "warning",
         ],
         env=env,
     )
@@ -51,6 +59,7 @@ def main() -> int:
         url = f"http://127.0.0.1:{port}/"
         # wait for readiness
         import urllib.request
+
         deadline = time.time() + 15
         while time.time() < deadline:
             try:
@@ -69,7 +78,7 @@ def main() -> int:
 
             # 1. Main view
             page.screenshot(path=str(OUT_DIR / "main.png"), full_page=False)
-            print(f"[ok] main.png")
+            print("[ok] main.png")
 
             # 2. Hover preview — hover the first session row
             row = page.query_selector('[data-testid^="session-row-"]')
@@ -77,14 +86,14 @@ def main() -> int:
                 row.hover()
                 time.sleep(0.6)
                 page.screenshot(path=str(OUT_DIR / "hover-preview.png"), full_page=False)
-                print(f"[ok] hover-preview.png")
+                print("[ok] hover-preview.png")
 
             # 3. Click row to show transcript
             if row:
                 row.click()
                 time.sleep(0.8)
                 page.screenshot(path=str(OUT_DIR / "transcript.png"), full_page=False)
-                print(f"[ok] transcript.png")
+                print("[ok] transcript.png")
 
             browser.close()
         return 0

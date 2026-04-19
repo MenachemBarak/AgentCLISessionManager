@@ -440,9 +440,9 @@ def _find_window_for_pid(pid: int) -> int | None:
     import ctypes
     from ctypes import wintypes
 
-    user32 = ctypes.windll.user32
+    user32 = ctypes.windll.user32  # type: ignore[attr-defined,unused-ignore]
     EnumWindows = user32.EnumWindows
-    EnumWindowsProc = ctypes.WINFUNCTYPE(ctypes.c_bool, wintypes.HWND, wintypes.LPARAM)
+    EnumWindowsProc = ctypes.WINFUNCTYPE(ctypes.c_bool, wintypes.HWND, wintypes.LPARAM)  # type: ignore[attr-defined,unused-ignore]
     GetWindowThreadProcessId = user32.GetWindowThreadProcessId
     IsWindowVisible = user32.IsWindowVisible
 
@@ -500,8 +500,8 @@ def _focus_hwnd(hwnd: int) -> bool:
         return False
     import ctypes
 
-    user32 = ctypes.windll.user32
-    kernel32 = ctypes.windll.kernel32
+    user32 = ctypes.windll.user32  # type: ignore[attr-defined,unused-ignore]
+    kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined,unused-ignore]
     SW_RESTORE = 9
 
     # Restore if minimized
@@ -623,7 +623,7 @@ def _uia_select_tab(session_id: str) -> dict:
             try:
                 for c in el.GetChildren():
                     if matched_tab:
-                        return
+                        return  # type: ignore[unreachable]
                     try:
                         if c.ControlTypeName == "TabItemControl" and _matches(c.Name):
                             matched_tab = c
@@ -857,9 +857,9 @@ def _find_wt_window() -> int | None:
     import ctypes
     from ctypes import wintypes
 
-    user32 = ctypes.windll.user32
+    user32 = ctypes.windll.user32  # type: ignore[attr-defined,unused-ignore]
     EnumWindows = user32.EnumWindows
-    EnumWindowsProc = ctypes.WINFUNCTYPE(ctypes.c_bool, wintypes.HWND, wintypes.LPARAM)
+    EnumWindowsProc = ctypes.WINFUNCTYPE(ctypes.c_bool, wintypes.HWND, wintypes.LPARAM)  # type: ignore[attr-defined,unused-ignore]
     GetWindowThreadProcessId = user32.GetWindowThreadProcessId
     IsWindowVisible = user32.IsWindowVisible
 

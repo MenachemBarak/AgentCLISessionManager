@@ -47,7 +47,9 @@ python_version = "3.10"
 # be a TypedDict. Public functions have annotations; internal helpers use
 # inferred types where JSONL shape is inherently Any.
 check_untyped_defs = true
-warn_unused_ignores = true
+# warn_unused_ignores off: we have platform-conditional `type: ignore` lines
+# for ctypes.windll that mypy flags as unused on Windows and needed on Linux.
+warn_unused_ignores = false
 warn_redundant_casts = true
 warn_unreachable = true
 no_implicit_optional = true
@@ -64,9 +66,12 @@ ignore_missing_imports = true
 # Production security scanning; exclude tests & fixtures.
 exclude_dirs = ["tests", ".venv", "frontend", "shots"]
 skips = [
-    "B104",  # hardcoded 127.0.0.1 bind — this is the intended loopback-only server
-    "B603",  # subprocess call — inputs are validated (session IDs are UUIDs)
-    "B607",  # partial path in subprocess — wt.exe/powershell are resolved via PATH by design
+    "B104",  # hardcoded 127.0.0.1 bind — intentional loopback-only server
+    "B404",  # subprocess import — we call wt.exe/powershell with validated args, shell=False
+    "B603",  # subprocess call — inputs are UUIDs or static, never user-interpolated shell strings
+    "B607",  # partial path in subprocess — wt.exe/powershell resolved via PATH by design
+    "B110",  # try/except/pass — defensive parsing of heterogeneous JSONL; failures are expected
+    "B112",  # try/except/continue — same: malformed lines are skipped intentionally
 ]
 
 [tool.pytest.ini_options]
