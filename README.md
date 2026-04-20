@@ -171,6 +171,18 @@ local-only — they require a running viewer + Chrome and are excluded from the 
 See [`SECURITY.md`](SECURITY.md) for vulnerability disclosure and
 [`CONTRIBUTING.md`](CONTRIBUTING.md) for the dev loop.
 
+## Docs for contributors & AI agents
+
+| Doc | When to read it |
+|---|---|
+| [`AGENTS.md`](AGENTS.md) | You're (or your AI assistant is) picking up this repo cold — **start here** |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Why code is structured the way it is; design decisions |
+| [`docs/RELEASE.md`](docs/RELEASE.md) | Cutting a new tagged release (step-by-step) |
+| [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md) | Something is broken — quick fixes for users and devs |
+| [`CHANGELOG.md`](CHANGELOG.md) | What shipped in each version |
+| [`SECURITY.md`](SECURITY.md) | Disclosure policy + audit notes |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | How to open a PR that passes CI |
+
 ## License
 
 [MIT](LICENSE)
