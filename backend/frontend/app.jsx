@@ -145,9 +145,11 @@ function App() {
       if (ev.type === 'loading_progress') { setLoadStatus({ ...ev.status, ready: false }); return; }
       if (ev.type === 'loading_done') { setLoadStatus((s) => ({ ...s, ready: true })); return; }
       setSessions(list);
-      // auto-select first active session on first load
+      // auto-select first active session on first load; re-select if the
+      // currently-selected session was deleted out from under us.
       setSelectedId((cur) => {
-        if (cur) return cur;
+        const stillExists = cur && list.some((s) => s.id === cur);
+        if (stillExists) return cur;
         const firstActive = list.find((s) => s.active);
         return firstActive?.id || list[0]?.id || null;
       });
