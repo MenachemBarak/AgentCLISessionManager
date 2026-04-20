@@ -124,12 +124,27 @@ function createSessionBus() {
     return { index: i, session: normalized };
   }
 
+  function removeSession(id) {
+    const i = sessions.findIndex((s) => s.id === id);
+    if (i < 0) return false;
+    sessions.splice(i, 1);
+    return true;
+  }
+
   function openSSE() {
     if (es || !running) return;
     es = new EventSource('/api/stream');
     es.addEventListener('session', (e) => {
       try {
         const ev = JSON.parse(e.data);
+        if (ev.type === 'session_deleted') {
+          if (removeSession(ev.id)) {
+            emit({ type: 'session_deleted', id: ev.id });
+          }
+          return;
+        }
+        // created / updated / any other event that carries a session payload
+        if (!ev.session) return;
         const { index } = upsert(ev.session);
         if (ev.type === 'session_created' && index < 0) {
           emit({ type: 'session_created', session: normalize(ev.session) });

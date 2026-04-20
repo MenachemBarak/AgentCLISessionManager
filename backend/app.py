@@ -294,34 +294,38 @@ _INDEX_PROGRESS: dict[str, Any] = {"done": 0, "total": 0, "phase": "idle"}
 _UUID_RE = __import__("re").compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 
 
+def _is_indexable_session_path(p: Path) -> bool:
+    """True if `p` is a path the index would track.
+
+    Shared by `_all_jsonl` (initial scan) and `_Watcher` (live updates) so
+    the two agree exactly on what counts as a session. Anything else is a
+    sub-agent file, a non-UUID name, or lives at the wrong depth.
+    """
+    if p.suffix != ".jsonl":
+        return False
+    if "subagents" in p.parts:
+        return False
+    if not _UUID_RE.match(p.stem):
+        return False
+    try:
+        rel = p.relative_to(PROJECTS_DIR)
+    except ValueError:
+        return False
+    return len(rel.parts) == 2
+
+
 def _all_jsonl() -> list[Path]:
     """Top-level session files only.
 
-    Claude Code top-level sessions live directly under ~/.claude/projects/<encoded>/<uuid>.jsonl.
-    Sub-agent sessions live under <uuid>/subagents/agent-*.jsonl and are NOT
-    resumable via `claude --resume`, so we exclude them.
+    Claude Code top-level sessions live directly under
+    ~/.claude/projects/<encoded>/<uuid>.jsonl. Sub-agent sessions live under
+    <uuid>/subagents/agent-*.jsonl and are NOT resumable via `claude --resume`,
+    so we exclude them. Shares its predicate with `_is_indexable_session_path`
+    (defined below) so the initial scan and the watchdog agree on every file.
     """
     if not PROJECTS_DIR.is_dir():
         return []
-    out: list[Path] = []
-    for p in PROJECTS_DIR.rglob("*.jsonl"):
-        parts = p.parts
-        # Exclude anything inside a subagents/ directory.
-        if "subagents" in parts:
-            continue
-        # Exclude files whose name isn't a UUID (e.g. agent-*.jsonl).
-        if not _UUID_RE.match(p.stem):
-            continue
-        # Must be direct child of the <encoded-project> dir.
-        # i.e. path == PROJECTS_DIR / <project> / <uuid>.jsonl
-        try:
-            rel = p.relative_to(PROJECTS_DIR)
-        except ValueError:
-            continue
-        if len(rel.parts) != 2:
-            continue
-        out.append(p)
-    return out
+    return [p for p in PROJECTS_DIR.rglob("*.jsonl") if _is_indexable_session_path(p)]
 
 
 def build_index() -> None:
@@ -967,21 +971,33 @@ _event_queue: asyncio.Queue[dict[str, Any]] | None = None
 _event_loop: asyncio.AbstractEventLoop | None = None
 
 
-class _Watcher(FileSystemEventHandler):
-    def _push(self, path_str: str, kind: str) -> None:
-        p = Path(path_str)
-        if p.suffix != ".jsonl":
-            return
-        # Apply the same filtering as _all_jsonl (exclude sub-agents etc.)
-        if "subagents" in p.parts or not _UUID_RE.match(p.stem):
-            return
-        try:
-            rel = p.relative_to(PROJECTS_DIR)
-        except ValueError:
-            return
-        if len(rel.parts) != 2:
-            return
+def _emit_sse(event: dict[str, Any]) -> None:
+    """Enqueue an SSE event for /api/stream subscribers; silent if no loop."""
+    if _event_queue is None or _event_loop is None:
+        return
+    try:
+        _event_loop.call_soon_threadsafe(_event_queue.put_nowait, event)
+    except RuntimeError:
+        # Event loop closed (shutdown) — drop the event rather than crash the watcher.
+        pass
 
+
+class _Watcher(FileSystemEventHandler):
+    """Reconciles ~/.claude/projects with _INDEX in near-real-time.
+
+    Handles all four file-lifecycle transitions so the in-memory index never
+    drifts from disk:
+      created/modified → upsert into _INDEX, emit session_created/session_updated
+      deleted          → evict from _INDEX, emit session_deleted
+      moved/renamed    → evict source (if indexable), then upsert destination
+                         (if indexable). A rename that only changes the case
+                         on Windows is a no-op evict+insert of the same id.
+    """
+
+    def _upsert(self, path_str: str) -> None:
+        p = Path(path_str)
+        if not _is_indexable_session_path(p):
+            return
         meta = _scan_session_meta(p, deep=False)
         if not meta:
             return
@@ -991,27 +1007,59 @@ class _Watcher(FileSystemEventHandler):
             return
         is_new = meta["id"] not in _INDEX
         _INDEX[meta["id"]] = meta
-        if _event_queue is not None and _event_loop is not None:
-            # Cross-check PID state so the SSE event carries the correct
-            # active flag (otherwise frontend state drifts to inactive).
-            active_ids = _get_active_session_ids()
-            out = {k: v for k, v in meta.items() if not k.startswith("_")}
-            if out["id"] in active_ids:
-                out["active"] = True
-                out["activityLabel"] = _activity_for(p)
-            ev = {"type": "session_created" if is_new else "session_updated", "session": out}
-            try:
-                _event_loop.call_soon_threadsafe(_event_queue.put_nowait, ev)
-            except RuntimeError:
-                pass
+        # Cross-check PID state so the SSE event carries the correct
+        # active flag (otherwise frontend state drifts to inactive).
+        active_ids = _get_active_session_ids()
+        out = {k: v for k, v in meta.items() if not k.startswith("_")}
+        if out["id"] in active_ids:
+            out["active"] = True
+            out["activityLabel"] = _activity_for(p)
+        _emit_sse({"type": "session_created" if is_new else "session_updated", "session": out})
+
+    def _evict(self, path_str: str) -> None:
+        p = Path(path_str)
+        # For deletes we can't always use the path filter (the file is already
+        # gone, so `p.stat()` would fail) — but the filter only reads from the
+        # path itself, which is still intact.
+        if not _is_indexable_session_path(p):
+            return
+        sid = p.stem
+        if sid not in _INDEX:
+            return
+        del _INDEX[sid]
+        _emit_sse({"type": "session_deleted", "id": sid})
 
     def on_created(self, event: Any) -> None:
         if not event.is_directory:
-            self._push(event.src_path, "created")
+            self._upsert(event.src_path)
 
     def on_modified(self, event: Any) -> None:
         if not event.is_directory:
-            self._push(event.src_path, "modified")
+            self._upsert(event.src_path)
+
+    def on_deleted(self, event: Any) -> None:
+        if event.is_directory:
+            # A whole project folder was deleted — evict every indexed session
+            # underneath it in one pass so the UI doesn't have to wait for N
+            # individual file-delete events (watchdog may not fire them for
+            # bulk rm on some platforms).
+            parent = Path(event.src_path)
+            to_evict = [
+                sid for sid, meta in _INDEX.items() if Path(meta.get("path", "")).is_relative_to(parent)
+            ]
+            for sid in to_evict:
+                del _INDEX[sid]
+                _emit_sse({"type": "session_deleted", "id": sid})
+            return
+        self._evict(event.src_path)
+
+    def on_moved(self, event: Any) -> None:
+        if event.is_directory:
+            return
+        # A rename is equivalent to delete(src) + create(dest). Handle both so
+        # the UI shows the move atomically.
+        self._evict(event.src_path)
+        self._upsert(event.dest_path)
 
 
 _observer: Any = None  # watchdog.observers.Observer has no importable type alias

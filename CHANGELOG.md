@@ -6,6 +6,28 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.2] — 2026-04-20
+
+### Fixed
+- **Deleted sessions now disappear from the UI** — the watchdog observer
+  previously only handled `on_created` and `on_modified`, so when JSONL files
+  were removed from disk (by the user, by `rm`, or by the viewer's own
+  cleanup) the in-memory `_INDEX` kept ghost entries until a process restart.
+  `_Watcher` now implements `on_deleted` (single file) and a bulk-evict path
+  for directory deletions, plus `on_moved` for renames (evict source +
+  upsert destination).
+- New `session_deleted` SSE event type. Frontend `data.jsx` removes the row
+  from its in-memory list; `app.jsx` re-selects another session if the
+  deleted one was the active selection.
+
+### Added
+- `_is_indexable_session_path(Path) -> bool` — shared predicate so the
+  initial scan (`_all_jsonl`) and the live watcher agree exactly on what
+  counts as a session.
+- `tests/test_watcher.py` — 13 tests across three layers: pure predicate,
+  direct method calls with synthetic events, and end-to-end with a real
+  `watchdog.observers.Observer` against a fresh `CLAUDE_HOME` tmpdir.
+
 ## [0.4.1] — 2026-04-19
 
 ### Fixed
@@ -137,7 +159,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - "New tab" / "Split" buttons spawn `wt.exe ... claude --resume <uuid>`
   - Self-installing Desktop shortcut launcher
 
-[Unreleased]: https://github.com/MenachemBarak/AgentCLISessionManager/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/MenachemBarak/AgentCLISessionManager/compare/v0.4.2...HEAD
+[0.4.2]: https://github.com/MenachemBarak/AgentCLISessionManager/releases/tag/v0.4.2
 [0.4.1]: https://github.com/MenachemBarak/AgentCLISessionManager/releases/tag/v0.4.1
 [0.4.0]: https://github.com/MenachemBarak/AgentCLISessionManager/releases/tag/v0.4.0
 [0.3.2]: https://github.com/MenachemBarak/AgentCLISessionManager/releases/tag/v0.3.2
