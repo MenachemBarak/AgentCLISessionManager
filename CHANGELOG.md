@@ -6,6 +6,32 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-04-21
+
+### Added
+- **Embedded terminal** — right pane now has a `Transcript | Terminal` tab
+  switch. Clicking **Terminal** mounts an xterm.js pane wired to a real
+  PTY on the server; type into the viewport and you're talking to a live
+  `cmd.exe`. No round-trip to Windows Terminal.
+  - **Backend** — new `/api/pty/ws` WebSocket speaking a tiny JSON
+    protocol (`spawn`/`input`/`resize` → `ready`/`output`/`exit`/`error`),
+    backed by `pywinpty` (Windows, ConPTY) or `ptyprocess` (posix). Strict
+    allow-listing of `argv[0]` + provider-mediated routing — no free-form
+    shell execution exposed on the loopback socket.
+  - **Frontend** — xterm@5.5.0 + addon-fit + addon-web-links loaded via
+    CDN (same pattern as React/Babel — still no build step). New
+    `TerminalPane` component owns one PTY; `ResizeObserver` keeps server
+    PTY dimensions synced with the DOM viewport.
+- 11 new backend tests (`tests/test_terminal.py`) covering pure utilities,
+  real PTY spawn/read/write/close, and the full WebSocket protocol via
+  FastAPI `TestClient`. Now 56/56 total pass.
+
+### Notes
+- This release ships the single-pane cut; tab bar and tmux-style splits
+  will land in subsequent patch releases (0.6.1+), same branch flow.
+- External Windows Terminal control (`/api/open`, `/api/focus`) is
+  unchanged — both paths coexist.
+
 ## [0.5.0] — 2026-04-20
 
 ### Added
@@ -189,7 +215,8 @@ agent-CLI support. Existing endpoints and UI work identically.
   - "New tab" / "Split" buttons spawn `wt.exe ... claude --resume <uuid>`
   - Self-installing Desktop shortcut launcher
 
-[Unreleased]: https://github.com/MenachemBarak/AgentCLISessionManager/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/MenachemBarak/AgentCLISessionManager/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/MenachemBarak/AgentCLISessionManager/releases/tag/v0.6.0
 [0.5.0]: https://github.com/MenachemBarak/AgentCLISessionManager/releases/tag/v0.5.0
 [0.4.2]: https://github.com/MenachemBarak/AgentCLISessionManager/releases/tag/v0.4.2
 [0.4.1]: https://github.com/MenachemBarak/AgentCLISessionManager/releases/tag/v0.4.1
