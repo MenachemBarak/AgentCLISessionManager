@@ -235,7 +235,7 @@ function App() {
         recentlyCreated={recentlyCreated}
         onOpen={handleOpen}
         onHover={handleHover} onLeave={handleLeave}/>
-      <Transcript session={selected} accent={accent} onOpen={handleOpen}/>
+      <RightPane selected={selected} accent={accent} onOpen={handleOpen}/>
       <PreviewPopover session={hovered?.session} anchor={hovered?.anchor}
         accent={accent} mode={tweaks.hoverMode}/>
       <TweaksPanel open={tweaksOpen} tweaks={tweaks} setTweaks={setTweaks}
@@ -244,6 +244,48 @@ function App() {
       <LoadingBar status={loadStatus} accent={accent}/>
     </WindowChrome>
   );
+}
+
+// Right pane is a tabbed container: [Transcript] [Terminal]. Transcript is
+// the default (no behavior change). Terminal mounts a single xterm.js pane
+// wired to /api/pty/ws running `cmd.exe` as an ad-hoc shell. Later PRs
+// turn this into a tab bar + splits + a per-session "resume in here" flow.
+function RightPane({ selected, accent, onOpen }) {
+  const [tab, setTab] = React.useState('transcript');
+  // Remount the terminal if the user re-selects it — cheaper than
+  // multiplexing two persistent PTYs for a minimal first cut.
+  return (
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+      <div style={{
+        display: 'flex', gap: 2, padding: '6px 10px 0',
+        borderBottom: '1px solid rgba(255,255,255,0.06)',
+      }}>
+        {[
+          { id: 'transcript', label: 'Transcript' },
+          { id: 'terminal',   label: 'Terminal' },
+        ].map((t) => (
+          <button key={t.id} onClick={() => setTab(t.id)}
+            style={tabBtnStyle(tab === t.id, accent)}
+            data-testid={`right-tab-${t.id}`}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+      {tab === 'transcript'
+        ? <Transcript session={selected} accent={accent} onOpen={onOpen}/>
+        : <TerminalPane spawn={{ cmd: ['cmd.exe'] }}/>}
+    </div>
+  );
+}
+
+function tabBtnStyle(active, accent) {
+  return {
+    padding: '6px 12px', fontSize: 12, fontFamily: 'Inter, sans-serif',
+    background: active ? 'rgba(255,255,255,0.06)' : 'transparent',
+    color: active ? accent || '#d7a24a' : 'rgba(255,255,255,0.55)',
+    border: 'none', borderBottom: active ? `2px solid ${accent || '#d7a24a'}` : '2px solid transparent',
+    cursor: 'pointer', marginBottom: -1,
+  };
 }
 
 function LoadingBar({ status, accent }) {

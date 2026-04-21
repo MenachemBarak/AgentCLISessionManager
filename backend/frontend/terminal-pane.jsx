@@ -1,0 +1,210 @@
+// Embedded terminal pane — xterm.js + /api/pty/ws.
+//
+// Contract: one `<TerminalPane>` owns exactly one PTY process on the server.
+// Mount → opens WS → sends "spawn" → server replies "ready" → the user
+// types, we forward `{type:"input",data:...}`; the server streams PTY
+// output back as `{type:"output",data:"..."}` which we `term.write(...)`
+// into xterm.
+//
+// Lifecycle defense:
+//   * We never call `term.write` or `ws.send` after unmount — both are
+//     guarded by a `disposed` flag plus readyState checks.
+//   * Resize is piped both directions: ResizeObserver → FitAddon.fit() →
+//     ws.send({type:"resize",cols,rows}) so the backend PTY matches the
+//     DOM viewport.
+//
+// No build step — this file is transformed at runtime by babel-standalone.
+
+// Tiny helper: resolve the WebSocket URL from the current page. We serve
+// the API on the same origin, so ws(s)://<host>:<port>/api/pty/ws.
+function ptyWsUrl() {
+  const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  return `${proto}//${window.location.host}/api/pty/ws`;
+}
+
+function TerminalPane({ spawn, onExit, onReady, className }) {
+  // `spawn` — object passed as the first WS frame. Shape:
+  //   { cmd: ["cmd.exe"] }                // ad-hoc shell
+  //   { provider: "claude-code", sessionId: "<uuid>" }  // resume
+  const hostRef = React.useRef(null);
+  const termRef = React.useRef(null);
+  const wsRef = React.useRef(null);
+  const fitRef = React.useRef(null);
+  const disposedRef = React.useRef(false);
+  const [status, setStatus] = React.useState('connecting'); // connecting|ready|exited|error
+  const [error, setError] = React.useState(null);
+
+  React.useEffect(() => {
+    disposedRef.current = false;
+    // Guard against SSR / early mount where globals aren't loaded yet.
+    if (typeof window === 'undefined' || !window.Terminal) {
+      console.warn('[pty] xterm.js not loaded yet');
+      setStatus('error');
+      setError('xterm.js not loaded');
+      return;
+    }
+
+    const Terminal = window.Terminal;
+    const FitAddon = window.FitAddon && window.FitAddon.FitAddon;
+    const WebLinksAddon = window.WebLinksAddon && window.WebLinksAddon.WebLinksAddon;
+
+    const term = new Terminal({
+      convertEol: false,  // pywinpty already emits \r\n; no double-conversion
+      cursorBlink: true,
+      fontFamily: '"JetBrains Mono", Menlo, Consolas, monospace',
+      fontSize: 13,
+      theme: {
+        background: '#0a0907',
+        foreground: '#e8e4dc',
+        cursor: '#d7a24a',
+        selectionBackground: 'rgba(215, 162, 74, 0.35)',
+      },
+      scrollback: 5000,
+      allowProposedApi: true,
+    });
+    termRef.current = term;
+
+    const fit = FitAddon ? new FitAddon() : null;
+    if (fit) {
+      term.loadAddon(fit);
+      fitRef.current = fit;
+    }
+    if (WebLinksAddon) term.loadAddon(new WebLinksAddon());
+
+    term.open(hostRef.current);
+    if (fit) {
+      try { fit.fit(); } catch (e) { console.warn('[pty] initial fit failed', e); }
+    }
+
+    const ws = new WebSocket(ptyWsUrl());
+    wsRef.current = ws;
+
+    const send = (obj) => {
+      if (disposedRef.current) return;
+      if (ws.readyState !== WebSocket.OPEN) return;
+      ws.send(JSON.stringify(obj));
+    };
+
+    ws.addEventListener('open', () => {
+      const cols = term.cols;
+      const rows = term.rows;
+      const first = { type: 'spawn', cols, rows, ...spawn };
+      console.log('[pty] → spawn', first);
+      send(first);
+    });
+
+    ws.addEventListener('message', (ev) => {
+      if (disposedRef.current) return;
+      let msg;
+      try { msg = JSON.parse(ev.data); }
+      catch { console.warn('[pty] non-JSON frame', ev.data); return; }
+      console.log('[pty] ← ', msg.type, msg);
+      switch (msg.type) {
+        case 'ready':
+          setStatus('ready');
+          onReady && onReady(msg.id);
+          break;
+        case 'output':
+          term.write(msg.data || '');
+          break;
+        case 'exit':
+          setStatus('exited');
+          onExit && onExit(msg.code);
+          // Leave the terminal visible but disable input — user can see
+          // the final output of a crashed shell.
+          break;
+        case 'error':
+          setStatus('error');
+          setError(String(msg.message || 'server error'));
+          break;
+      }
+    });
+
+    ws.addEventListener('error', (ev) => {
+      if (disposedRef.current) return;
+      console.error('[pty] ws error', ev);
+      setStatus('error');
+      setError('websocket error');
+    });
+
+    ws.addEventListener('close', (ev) => {
+      if (disposedRef.current) return;
+      console.log('[pty] ws closed', ev.code, ev.reason);
+      if (status !== 'exited' && status !== 'error') {
+        setStatus('exited');
+      }
+    });
+
+    // Forward keystrokes → server
+    const inputDisp = term.onData((data) => {
+      send({ type: 'input', data });
+    });
+
+    // Forward resize events → server (debounced — xterm can fire many in
+    // quick succession when the container grows).
+    let resizeTimer = null;
+    const resizeDisp = term.onResize(({ cols, rows }) => {
+      if (resizeTimer) clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => {
+        send({ type: 'resize', cols, rows });
+      }, 40);
+    });
+
+    // Container resize → fit.fit() → term.onResize fires → we ship
+    const ro = new ResizeObserver(() => {
+      if (fitRef.current) {
+        try { fitRef.current.fit(); } catch {}
+      }
+    });
+    ro.observe(hostRef.current);
+
+    return () => {
+      disposedRef.current = true;
+      try { ro.disconnect(); } catch {}
+      try { inputDisp.dispose(); resizeDisp.dispose(); } catch {}
+      try {
+        if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+          ws.close(1000, 'pane-unmount');
+        }
+      } catch {}
+      try { term.dispose(); } catch {}
+      wsRef.current = null;
+      termRef.current = null;
+      fitRef.current = null;
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps  — spawn change should remount
+  }, [JSON.stringify(spawn)]);
+
+  // Status ribbon — tiny, non-intrusive.
+  const ribbon = (() => {
+    if (status === 'ready') return null;
+    if (status === 'connecting') return <div style={ribbonStyle('#d7a24a')}>connecting…</div>;
+    if (status === 'exited') return <div style={ribbonStyle('#7a7366')}>session exited</div>;
+    if (status === 'error') return <div style={ribbonStyle('#c85a5a')}>error: {error || 'unknown'}</div>;
+    return null;
+  })();
+
+  return (
+    <div
+      className={className || ''}
+      style={{
+        position: 'relative', width: '100%', height: '100%',
+        minHeight: 240, background: '#0a0907', padding: 8, borderRadius: 8,
+      }}
+    >
+      {ribbon}
+      <div ref={hostRef} style={{ position: 'absolute', inset: 8 }}/>
+    </div>
+  );
+}
+
+function ribbonStyle(color) {
+  return {
+    position: 'absolute', top: 6, right: 10, zIndex: 2,
+    padding: '2px 8px', fontSize: 11, borderRadius: 4,
+    background: 'rgba(10,9,7,0.7)', color, border: `1px solid ${color}33`,
+    fontFamily: '"JetBrains Mono", monospace',
+  };
+}
+
+window.TerminalPane = TerminalPane;

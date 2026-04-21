@@ -37,9 +37,16 @@
 </head>
 <body>
 <div id="root"></div>
+<!-- xterm.js — pinned via unpkg, same CDN strategy as React/Babel above.
+     Addon-fit auto-resizes the viewport to the DOM container; web-links
+     makes http(s)://… targets clickable in the rendered output. -->
+<link rel="stylesheet" href="https://unpkg.com/@xterm/xterm@5.5.0/css/xterm.css"/>
 <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@xterm/xterm@5.5.0/lib/xterm.js" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@xterm/addon-fit@0.10.0/lib/addon-fit.js" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@xterm/addon-web-links@0.11.0/lib/addon-web-links.js" crossorigin="anonymous"></script>
 <script type="text/babel" src="utils.jsx"></script>
 <script type="text/babel" src="icons.jsx"></script>
 <script type="text/babel" src="data.jsx"></script>
@@ -48,6 +55,7 @@
 <script type="text/babel" src="transcript.jsx"></script>
 <script type="text/babel" src="preview.jsx"></script>
 <script type="text/babel" src="tweaks.jsx"></script>
+<script type="text/babel" src="terminal-pane.jsx"></script>
 <script type="text/babel" src="app.jsx"></script>
 </body>
 </html>
