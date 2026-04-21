@@ -104,6 +104,22 @@ def main(argv: list[str] | None = None) -> int:
 
     _frontend_dir()  # fail fast if packaging is broken
 
+    # Frozen-exe troubleshooting: also log to a file next to the exe so
+    # users can diagnose PTY / spawn failures without attaching a debugger.
+    try:
+        import logging
+
+        log_path = Path.home() / ".claude" / "claude-sessions-viewer.log"
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        fh = logging.FileHandler(log_path, encoding="utf-8")
+        fh.setLevel(logging.DEBUG)
+        fh.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+        root_logger = logging.getLogger()
+        root_logger.setLevel(logging.DEBUG)
+        root_logger.addHandler(fh)
+    except Exception:
+        pass
+
     # ── server-only mode (legacy / headless) ──────────────────────────────
     if args.server_only:
         port = args.port or 8765

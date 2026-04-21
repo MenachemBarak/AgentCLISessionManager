@@ -39,6 +39,47 @@ log = logging.getLogger(__name__)
 IS_WINDOWS = platform.system() == "Windows"
 
 
+_console_state = {"attached": False, "attempted": False}
+
+
+def _ensure_hidden_console() -> None:
+    """When running inside a PyInstaller `console=False` exe (our packaged
+    desktop app), the parent process has no console attached. pywinpty /
+    ConPTY can still spawn a child, but the child inherits broken
+    std-handles and cmd.exe exits with STATUS_CONTROL_C_EXIT (0xC000013A)
+    within milliseconds of launch — which is exactly the "session exited"
+    regression reported against v0.7.0.
+
+    Fix: allocate a hidden console on first call. The console has no visible
+    window (SW_HIDE), it's just a kernel handle pywinpty can use as a
+    parent reference. Idempotent via the _console_state dict; no-op when
+    not on Windows or when a console already exists.
+    """
+    if not IS_WINDOWS:
+        return
+    if _console_state["attempted"]:
+        return
+    _console_state["attempted"] = True
+    try:
+        import ctypes
+
+        kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
+        user32 = ctypes.windll.user32  # type: ignore[attr-defined]
+        existing = int(kernel32.GetConsoleWindow() or 0)
+        if existing:
+            log.warning("terminal: console already attached (hwnd=%s) — skipping AllocConsole", existing)
+            _console_state["attached"] = True
+            return
+        alloc_ok = bool(kernel32.AllocConsole())
+        hwnd = int(kernel32.GetConsoleWindow() or 0)
+        log.warning("terminal: AllocConsole=%s hwnd=%s", alloc_ok, hwnd)
+        if hwnd:
+            user32.ShowWindow(hwnd, 0)  # SW_HIDE
+            _console_state["attached"] = True
+    except Exception:  # noqa: BLE001
+        log.exception("failed to allocate hidden console; PTY may misbehave")
+
+
 def _spawn(cmd: list[str] | str, cols: int, rows: int, cwd: str | None, env: dict[str, str] | None) -> Any:
     """Spawn a PTY child running `cmd`. Returns the library-specific
     process handle — both `winpty.PtyProcess` and `ptyprocess.PtyProcess`
@@ -122,6 +163,10 @@ class PtySession:
             self.on_output = on_output
         if on_exit is not None:
             self.on_exit = on_exit
+        # Frozen-exe fix: make sure a (hidden) console is attached to the
+        # parent before the first child spawn, otherwise cmd.exe immediately
+        # exits with STATUS_CONTROL_C_EXIT. Safe/no-op when not frozen.
+        _ensure_hidden_console()
         self._proc = _spawn(self.cmd, self.cols, self.rows, self.cwd, self.env)
         self._read_thread = threading.Thread(
             target=self._read_loop, name=f"pty-read-{self.id[:8]}", daemon=True

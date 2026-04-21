@@ -6,6 +6,37 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.7.1] — 2026-04-21
+
+### Fixed
+- **Embedded terminal in the packaged exe** — `cmd.exe` was exiting
+  immediately (code `0xC000013A` / `STATUS_CONTROL_C_EXIT`) inside the
+  PyInstaller `console=False` frozen build. Root cause: pywinpty **3.x**
+  regressed on frozen exes. Pinned `pywinpty==2.0.15` (the version the
+  broader Jupyter/IPython ecosystem ships with). Dev path (`python -m
+  uvicorn`) was unaffected, so the regression only surfaced once users
+  ran the native app. Verified end-to-end with a rebuilt 0.7.1 exe
+  against the mock fixture: cmd.exe starts, prompt renders, echo
+  round-trips, no spurious exit.
+
+### Added
+- **Self-update checker** — on launch the app polls GitHub Releases for
+  a newer `vX.Y.Z` tag and exposes the result at `/api/update-status`.
+  Calling `POST /api/update/download` fetches the new exe next to the
+  running one as `*.exe.new`, verifies the SHA-256 against the release
+  API's published digest, and surfaces `restartInstructions` so the
+  user can swap it in on the next launch. No background exec, no
+  telemetry — just a plain HTTP check against `api.github.com`.
+- Structured file logging at `~/.claude/claude-sessions-viewer.log` so
+  frozen-exe diagnostics (future regressions like the one above) no
+  longer require reproducing under a debug console.
+
+### Security
+- `backend/terminal._ensure_hidden_console()` allocates a hidden console
+  on first PTY spawn as belt-and-braces against frozen-exe console
+  inheritance edge cases. Kept even though the pywinpty downgrade was
+  the root-cause fix.
+
 ## [0.7.0] — 2026-04-21
 
 ### Added
@@ -243,7 +274,8 @@ agent-CLI support. Existing endpoints and UI work identically.
   - "New tab" / "Split" buttons spawn `wt.exe ... claude --resume <uuid>`
   - Self-installing Desktop shortcut launcher
 
-[Unreleased]: https://github.com/MenachemBarak/AgentCLISessionManager/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/MenachemBarak/AgentCLISessionManager/compare/v0.7.1...HEAD
+[0.7.1]: https://github.com/MenachemBarak/AgentCLISessionManager/releases/tag/v0.7.1
 [0.7.0]: https://github.com/MenachemBarak/AgentCLISessionManager/releases/tag/v0.7.0
 [0.6.0]: https://github.com/MenachemBarak/AgentCLISessionManager/releases/tag/v0.6.0
 [0.5.0]: https://github.com/MenachemBarak/AgentCLISessionManager/releases/tag/v0.5.0
