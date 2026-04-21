@@ -412,7 +412,9 @@ class ClaudeCodeProvider:
         return sid
 
     def evict_under_dir(self, parent: Path) -> list[str]:
-        to_evict = [sid for sid, meta in self._index.items() if Path(meta.get("path", "")).is_relative_to(parent)]
+        to_evict = [
+            sid for sid, meta in self._index.items() if Path(meta.get("path", "")).is_relative_to(parent)
+        ]
         for sid in to_evict:
             del self._index[sid]
         return to_evict
