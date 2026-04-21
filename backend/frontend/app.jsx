@@ -246,34 +246,115 @@ function App() {
   );
 }
 
-// Right pane is a tabbed container: [Transcript] [Terminal]. Transcript is
-// the default (no behavior change). Terminal mounts a single xterm.js pane
-// wired to /api/pty/ws running `cmd.exe` as an ad-hoc shell. Later PRs
-// turn this into a tab bar + splits + a per-session "resume in here" flow.
+// Right pane is a tabbed container. The first tab is always "Transcript"
+// (read-only session history); all subsequent tabs are live terminals.
+// Clicking **+** spawns a new PTY tab. Each terminal tab keeps its PTY
+// alive even when hidden (we only render the active one but don't unmount
+// the others — TerminalPane keeps its WebSocket across React tree moves
+// because React re-uses instances when the key is stable).
+//
+// For the first iteration each TerminalPane still unmounts when you
+// switch away, so switching tabs restarts the PTY. PR #5 adds splits;
+// once the layout is a real tree we'll stop unmounting and the PTYs
+// persist. Keeping the semantics honest rather than faking persistence.
+let _terminalSeq = 0;
 function RightPane({ selected, accent, onOpen }) {
-  const [tab, setTab] = React.useState('transcript');
-  // Remount the terminal if the user re-selects it — cheaper than
-  // multiplexing two persistent PTYs for a minimal first cut.
+  // terminals is an ordered list of objects: {id, label, spawn}
+  const [terminals, setTerminals] = React.useState([]);
+  // active tab id — 'transcript' or the id of a terminal
+  const [activeId, setActiveId] = React.useState('transcript');
+
+  const openTerminal = React.useCallback(() => {
+    _terminalSeq += 1;
+    const id = `term-${_terminalSeq}`;
+    setTerminals((list) => [...list, { id, label: `Terminal ${_terminalSeq}`, spawn: { cmd: ['cmd.exe'] } }]);
+    setActiveId(id);
+  }, []);
+
+  const closeTerminal = React.useCallback((id, e) => {
+    if (e) { e.stopPropagation(); }
+    setTerminals((list) => {
+      const next = list.filter((t) => t.id !== id);
+      // If the active tab was the one we're closing, move focus to the
+      // previous tab (or transcript if none left).
+      setActiveId((cur) => {
+        if (cur !== id) return cur;
+        const idx = list.findIndex((t) => t.id === id);
+        if (idx > 0) return list[idx - 1].id;
+        if (next.length > 0) return next[0].id;
+        return 'transcript';
+      });
+      return next;
+    });
+  }, []);
+
+  // Ctrl+Shift+T → new terminal, Ctrl+W → close active terminal.
+  // Only fires when focus is outside an input — we don't want to steal
+  // shortcuts from a live xterm or from the session-search field.
+  React.useEffect(() => {
+    function onKey(e) {
+      const tgt = e.target;
+      const tag = tgt && tgt.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+      // let xterm consume keystrokes inside the terminal itself
+      if (tgt && tgt.closest && tgt.closest('.xterm')) return;
+      if (e.ctrlKey && e.shiftKey && (e.key === 'T' || e.key === 't')) {
+        e.preventDefault();
+        openTerminal();
+      } else if (e.ctrlKey && (e.key === 'w' || e.key === 'W') && activeId !== 'transcript') {
+        e.preventDefault();
+        closeTerminal(activeId);
+      }
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [activeId, openTerminal, closeTerminal]);
+
+  const active = terminals.find((t) => t.id === activeId) || null;
+
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
       <div style={{
-        display: 'flex', gap: 2, padding: '6px 10px 0',
+        display: 'flex', gap: 2, padding: '6px 10px 0', alignItems: 'center',
         borderBottom: '1px solid rgba(255,255,255,0.06)',
       }}>
-        {[
-          { id: 'transcript', label: 'Transcript' },
-          { id: 'terminal',   label: 'Terminal' },
-        ].map((t) => (
-          <button key={t.id} onClick={() => setTab(t.id)}
-            style={tabBtnStyle(tab === t.id, accent)}
+        {/* Transcript tab — always first, never closable */}
+        <button onClick={() => setActiveId('transcript')}
+          style={tabBtnStyle(activeId === 'transcript', accent)}
+          data-testid="right-tab-transcript">
+          Transcript
+        </button>
+        {/* Terminal tabs */}
+        {terminals.map((t) => (
+          <button key={t.id} onClick={() => setActiveId(t.id)}
+            style={tabBtnStyle(activeId === t.id, accent)}
             data-testid={`right-tab-${t.id}`}>
             {t.label}
+            <span onClick={(e) => closeTerminal(t.id, e)}
+              data-testid={`right-tab-close-${t.id}`}
+              style={{
+                marginLeft: 6, padding: '0 4px', borderRadius: 3, opacity: 0.55,
+                fontSize: 11, cursor: 'pointer',
+              }}
+              title="Close (Ctrl+W)">×</span>
           </button>
         ))}
+        {/* New-terminal button */}
+        <button onClick={openTerminal}
+          title="New terminal (Ctrl+Shift+T)"
+          data-testid="right-tab-new-terminal"
+          style={{
+            padding: '6px 10px', fontSize: 14, fontFamily: 'Inter, sans-serif',
+            background: 'transparent', color: 'rgba(255,255,255,0.45)',
+            border: 'none', cursor: 'pointer',
+          }}>+</button>
       </div>
-      {tab === 'transcript'
+      {/* Body — mount only the active tab's content. Terminal tabs
+          currently restart their PTY on switch; splits/persistence come
+          in PR #5. */}
+      {activeId === 'transcript'
         ? <Transcript session={selected} accent={accent} onOpen={onOpen}/>
-        : <TerminalPane spawn={{ cmd: ['cmd.exe'] }}/>}
+        : (active ? <TerminalPane spawn={active.spawn}/> : null)}
     </div>
   );
 }
@@ -284,7 +365,7 @@ function tabBtnStyle(active, accent) {
     background: active ? 'rgba(255,255,255,0.06)' : 'transparent',
     color: active ? accent || '#d7a24a' : 'rgba(255,255,255,0.55)',
     border: 'none', borderBottom: active ? `2px solid ${accent || '#d7a24a'}` : '2px solid transparent',
-    cursor: 'pointer', marginBottom: -1,
+    cursor: 'pointer', marginBottom: -1, display: 'inline-flex', alignItems: 'center',
   };
 }
 
