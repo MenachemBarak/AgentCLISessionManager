@@ -17,7 +17,6 @@ requirements.txt, but we belt-and-suspender).
 
 from __future__ import annotations
 
-import json
 import platform
 import time
 
@@ -45,7 +44,7 @@ def test_windows_quote_wraps_whitespace() -> None:
 
 
 def test_windows_quote_doubles_embedded_quotes() -> None:
-    got = subprocess_list_to_windows_str(['echo', 'he said "hi"'])
+    got = subprocess_list_to_windows_str(["echo", 'he said "hi"'])
     assert got == 'echo "he said ""hi"""'
 
 
