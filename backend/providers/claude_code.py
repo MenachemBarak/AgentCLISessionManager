@@ -28,7 +28,6 @@ from watchdog.observers import Observer
 from backend.providers.base import (
     Message,
     Preview,
-    ProviderUnavailable,
     SessionMeta,
     WatcherCallback,
 )
