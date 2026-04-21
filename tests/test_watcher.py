@@ -189,10 +189,14 @@ def live_home(tmp_path_factory):
     prev_env = os.environ.get("CLAUDE_HOME")
     os.environ["CLAUDE_HOME"] = str(home)
 
-    # Re-import so module-level CLAUDE_HOME picks up the new env.
+    # Re-import `backend.app` so its module-level CLAUDE_HOME picks up the
+    # new env. NOTE: we purge only `backend.app` — not the whole `backend.*`
+    # tree — because wiping `backend.providers` would give its exception
+    # classes fresh identities, breaking `except ProviderUnavailable` in
+    # the registry for any test that runs after this fixture.
     sys.path.insert(0, str(ROOT))
     for name in list(sys.modules):
-        if name.startswith("backend"):
+        if name == "backend.app" or name.startswith("backend.app."):
             del sys.modules[name]
     import backend.app as live
 
