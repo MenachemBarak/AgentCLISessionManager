@@ -6,6 +6,34 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.7.0] — 2026-04-21
+
+### Added
+- **Resume sessions inside the viewer** — every idle session row gets a new
+  "In viewer" button next to "New tab" / "Split". Clicking it spawns an
+  embedded terminal tab running `claude --resume <uuid>` via the
+  provider-mediated PTY WebSocket — no Windows Terminal round-trip.
+  Tab label is the session's user label / Claude-set title / a fallback
+  `Resume <sid8>`.
+- **Tmux-style splits** (from v0.6.1 WIP, now shipped together):
+  - Recursive tile tree per terminal tab. `Alt+Shift+H` splits right,
+    `Alt+Shift+V` splits down, `Alt+Shift+X` closes the focused pane,
+    drag a divider to resize. Matching toolbar buttons in the tab bar.
+  - **Persistent panes** — hidden tabs use `display:none` instead of
+    unmounting, so every xterm viewport + PTY WebSocket stays alive when
+    you switch tabs. Kills the remount limitation documented in v0.6.0.
+- **Multiple terminal tabs** — `+` button spawns a new terminal tab,
+  `×` per tab closes it, `Ctrl+Shift+T` / `Ctrl+W` keyboard shortcuts.
+  Each tab owns its own tile tree.
+
+### Notes
+- The resume path uses the backend's strict allow-list: only
+  `provider.resume_command(sid)` can construct argv (no free-form shell).
+  Codex / Copilot CLI / Gemini CLI adapters will just work here once
+  their providers land — the frontend button is provider-agnostic.
+- External Windows Terminal control (`/api/open`, `/api/focus`) unchanged.
+  Both paths coexist: the user picks per session.
+
 ## [0.6.0] — 2026-04-21
 
 ### Added
@@ -215,7 +243,8 @@ agent-CLI support. Existing endpoints and UI work identically.
   - "New tab" / "Split" buttons spawn `wt.exe ... claude --resume <uuid>`
   - Self-installing Desktop shortcut launcher
 
-[Unreleased]: https://github.com/MenachemBarak/AgentCLISessionManager/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/MenachemBarak/AgentCLISessionManager/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/MenachemBarak/AgentCLISessionManager/releases/tag/v0.7.0
 [0.6.0]: https://github.com/MenachemBarak/AgentCLISessionManager/releases/tag/v0.6.0
 [0.5.0]: https://github.com/MenachemBarak/AgentCLISessionManager/releases/tag/v0.5.0
 [0.4.2]: https://github.com/MenachemBarak/AgentCLISessionManager/releases/tag/v0.4.2
