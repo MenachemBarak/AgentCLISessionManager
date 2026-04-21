@@ -32,7 +32,9 @@ dependencies = [
     "pywebview>=5.3",
     "uiautomation>=2.0.29; platform_system == 'Windows'",
     "comtypes>=1.4.11; platform_system == 'Windows'",
-    "pywinpty>=3.0.3; platform_system == 'Windows'",
+    # pywinpty PINNED to 2.0.15 — 3.x regresses in PyInstaller console=False
+    # frozen exes (cmd.exe exits with STATUS_CONTROL_C_EXIT on spawn).
+    "pywinpty==2.0.15; platform_system == 'Windows'",
     "ptyprocess>=0.7.0; platform_system != 'Windows'",
 ]
 
@@ -124,6 +126,8 @@ skips = [
     "B607",  # partial path in subprocess — wt.exe/powershell resolved via PATH by design
     "B110",  # try/except/pass — defensive parsing of heterogeneous JSONL; failures are expected
     "B112",  # try/except/continue — same: malformed lines are skipped intentionally
+    "B310",  # urlopen — URLs are either hardcoded (api.github.com) or sourced from our
+             # own releases API response; SHA-256 verification gates the download
 ]
 
 [tool.pytest.ini_options]

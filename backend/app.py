@@ -25,6 +25,7 @@ from sse_starlette.sse import EventSourceResponse
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
+from backend import updater
 from backend.__version__ import __version__
 from backend.providers import PROVIDERS
 from backend.providers import available as _available_providers
@@ -401,6 +402,24 @@ async def _startup() -> None:
     # initial scan in background so server starts fast
     asyncio.create_task(asyncio.to_thread(build_index))
     start_watcher()
+    # Self-update: clean any stale `.old` left by a prior swap, then
+    # kick off a non-blocking check for a newer GitHub Release.
+    updater.remove_stale_old_file()
+    updater.start_background_check()
+
+
+@app.get("/api/update-status")
+def update_status() -> dict[str, Any]:
+    """Return latest-version info. Frontend polls on mount + after any
+    successful download so the banner can reflect the new state."""
+    return updater.STATE.snapshot()
+
+
+@app.post("/api/update/download")
+def update_download() -> dict[str, Any]:
+    """Fetch the newer exe into a sibling `.new` file. Returns when the
+    download completes — the frontend then tells the user to relaunch."""
+    return updater.download_and_stage()
 
 
 @app.get("/api/sessions")
