@@ -100,8 +100,18 @@ files = ["backend", "hooks"]
 exclude = ["tests/fixtures", "\\.venv"]
 
 [[tool.mypy.overrides]]
-# Third-party modules without type stubs. uiautomation/comtypes are Windows-only.
-module = ["uiautomation", "comtypes.*", "watchdog.*", "sse_starlette.*"]
+# Third-party modules without type stubs. uiautomation/comtypes are Windows-only;
+# winpty / ptyprocess are platform-specific and ship without py.typed markers.
+module = [
+    "uiautomation",
+    "comtypes.*",
+    "watchdog.*",
+    "sse_starlette.*",
+    "winpty",
+    "winpty.*",
+    "ptyprocess",
+    "ptyprocess.*",
+]
 ignore_missing_imports = true
 
 [tool.bandit]
