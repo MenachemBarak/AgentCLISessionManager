@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any
 
 import psutil
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -28,6 +28,11 @@ from watchdog.observers import Observer
 from backend.__version__ import __version__
 from backend.providers import PROVIDERS
 from backend.providers import available as _available_providers
+from backend.terminal import (
+    PtySession,
+    PtySessionManager,
+    bridge_pty_to_websocket,
+)
 
 IS_WINDOWS = platform.system() == "Windows"
 
@@ -1100,6 +1105,130 @@ def start_watcher() -> None:
     obs.daemon = True
     obs.start()
     _observer = obs
+
+
+# ─────────────────────── Embedded terminal (PTY over WebSocket) ────────
+_pty_manager = PtySessionManager()
+
+
+@app.websocket("/api/pty/ws")
+async def pty_websocket(websocket: WebSocket) -> None:
+    """Bidirectional terminal bridge.
+
+    Client sends (JSON text frames):
+        {"type": "spawn", "cmd": ["cmd.exe"], "cols": 120, "rows": 30,
+         "cwd": "C:/Users/you", "provider": "claude-code",
+         "sessionId": "<uuid>"}
+        {"type": "input",  "data": "<text>"}
+        {"type": "resize", "cols": 120, "rows": 30}
+
+    Server sends:
+        {"type": "ready",  "id": "<pty-session-id>"}
+        {"type": "output", "data": "<bytes decoded utf-8>"}
+        {"type": "exit",   "code": <int|null>}
+        {"type": "error",  "message": "<str>"}
+
+    The first message from the client must be "spawn" — anything else
+    closes the socket. We only allow cmd resolution through a provider's
+    `resume_command(sid)` or, for ad-hoc tabs, a small whitelist
+    (`cmd.exe`, `powershell.exe`, `bash`) — never a free-form user string
+    as argv[0].
+    """
+    await websocket.accept()
+    session: PtySession | None = None
+    loop = asyncio.get_running_loop()
+    try:
+        first = await websocket.receive_json()
+        if first.get("type") != "spawn":
+            await websocket.send_json({"type": "error", "message": "first message must be type=spawn"})
+            await websocket.close()
+            return
+
+        try:
+            cmd = _resolve_pty_command(first)
+        except ValueError as e:
+            # Rejected by the whitelist / unknown provider — tell the client,
+            # then close. Dropping silently would leave the JS receive loop
+            # blocked forever.
+            await websocket.send_json({"type": "error", "message": str(e)})
+            await websocket.close()
+            return
+
+        cols = int(first.get("cols", 80))
+        rows = int(first.get("rows", 24))
+        cwd = first.get("cwd")
+
+        session = PtySession(cmd=cmd, cols=cols, rows=rows, cwd=cwd)
+        # Wire output/exit BEFORE starting the PTY — the first chunk (ConPTY
+        # init escapes) can arrive within microseconds; assigning callbacks
+        # post-spawn would race and drop that frame.
+        bridge_pty_to_websocket(session, websocket.send_json, loop)
+        try:
+            session.spawn()
+        except Exception as e:  # noqa: BLE001 — report to client and close
+            await websocket.send_json({"type": "error", "message": f"spawn failed: {e}"})
+            await websocket.close()
+            return
+
+        _pty_manager.add(session)
+        await websocket.send_json({"type": "ready", "id": session.id})
+
+        while True:
+            msg = await websocket.receive_json()
+            t = msg.get("type")
+            if t == "input":
+                session.write(str(msg.get("data", "")))
+            elif t == "resize":
+                session.resize(int(msg.get("cols", 80)), int(msg.get("rows", 24)))
+            else:
+                # unknown message — ignore rather than tear down the socket
+                continue
+    except WebSocketDisconnect:
+        pass
+    except Exception:  # noqa: BLE001
+        pass
+    finally:
+        if session is not None:
+            _pty_manager.remove(session.id)
+            session.close()
+
+
+def _resolve_pty_command(spawn_msg: dict[str, Any]) -> list[str]:
+    """Pick the argv to spawn, applying strict whitelisting.
+
+    Routes:
+      1. `{provider, sessionId}` → provider.resume_command(sid) → argv
+      2. `{cmd: [...]}` where argv[0] is in `_PTY_ALLOWED_SHELLS`
+    Anything else raises — we do NOT accept free-form user argv[0], which
+    would turn the WebSocket into a shell-injection primitive.
+    """
+    prov = spawn_msg.get("provider")
+    sid = spawn_msg.get("sessionId")
+    if prov and sid:
+        for p in _available_providers():
+            if p.name == prov:
+                return p.resume_command(str(sid))
+        raise ValueError(f"unknown provider {prov!r}")
+
+    cmd = spawn_msg.get("cmd")
+    if isinstance(cmd, list) and cmd and cmd[0] in _PTY_ALLOWED_SHELLS:
+        return [str(x) for x in cmd]
+    raise ValueError("spawn message must name {provider, sessionId} or an allowed shell in cmd[0]")
+
+
+# Keep tight — these are the only top-of-argv values the WebSocket accepts
+# when not routing through a provider's resume_command. Explicitly NOT
+# including `/bin/sh` etc. because our current users (Windows) won't hit
+# them; add when we implement posix support.
+_PTY_ALLOWED_SHELLS: set[str] = {"cmd.exe", "powershell.exe", "pwsh.exe", "bash.exe"}
+
+
+@app.on_event("shutdown")
+async def _shutdown() -> None:
+    """Best-effort PTY cleanup so uvicorn reloads don't orphan child
+    processes (matters mostly for dev — in production the OS reaps on
+    parent death)."""
+    _pty_manager.close_all()
 
 
 @app.get("/api/stream")
