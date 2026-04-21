@@ -246,37 +246,43 @@ function App() {
   );
 }
 
-// Right pane is a tabbed container. The first tab is always "Transcript"
-// (read-only session history); all subsequent tabs are live terminals.
-// Clicking **+** spawns a new PTY tab. Each terminal tab keeps its PTY
-// alive even when hidden (we only render the active one but don't unmount
-// the others — TerminalPane keeps its WebSocket across React tree moves
-// because React re-uses instances when the key is stable).
+// Right pane = [Transcript] plus a dynamic list of terminal *tabs*. Each
+// terminal tab owns a recursive tile-tree (`window.splits`) whose leaves
+// are PTYs. Unlike PR #4, tabs are rendered with `display:none` when
+// hidden — never unmounted — so switching tabs doesn't restart their
+// shells. Every TerminalPane keeps a stable React key (`pane.id`) so
+// React doesn't remount it across split/close operations either.
 //
-// For the first iteration each TerminalPane still unmounts when you
-// switch away, so switching tabs restarts the PTY. PR #5 adds splits;
-// once the layout is a real tree we'll stop unmounting and the PTYs
-// persist. Keeping the semantics honest rather than faking persistence.
+// Keyboard shortcuts (handler ignores keystrokes inside inputs / xterm):
+//   Ctrl+Shift+T        new terminal tab
+//   Ctrl+W              close active terminal tab
+//   Alt+Shift+H         split focused pane horizontally (new pane right)
+//   Alt+Shift+V         split focused pane vertically   (new pane below)
+//   Alt+Shift+X         close focused pane
 let _terminalSeq = 0;
 function RightPane({ selected, accent, onOpen }) {
-  // terminals is an ordered list of objects: {id, label, spawn}
+  // terminals[].tree  is the tile tree for that tab (built via
+  // window.splits.makePane / splitNode / closeNode).
   const [terminals, setTerminals] = React.useState([]);
-  // active tab id — 'transcript' or the id of a terminal
   const [activeId, setActiveId] = React.useState('transcript');
+  // focusedPaneId is global across all tabs — only the active tab's
+  // ring is visible in practice. Splits act on the focused pane of the
+  // active tab.
+  const [focusedPaneId, setFocusedPaneId] = React.useState(null);
 
   const openTerminal = React.useCallback(() => {
     _terminalSeq += 1;
     const id = `term-${_terminalSeq}`;
-    setTerminals((list) => [...list, { id, label: `Terminal ${_terminalSeq}`, spawn: { cmd: ['cmd.exe'] } }]);
+    const pane = window.splits.makePane({ cmd: ['cmd.exe'] });
+    setTerminals((list) => [...list, { id, label: `Terminal ${_terminalSeq}`, tree: pane }]);
     setActiveId(id);
+    setFocusedPaneId(pane.id);
   }, []);
 
   const closeTerminal = React.useCallback((id, e) => {
     if (e) { e.stopPropagation(); }
     setTerminals((list) => {
       const next = list.filter((t) => t.id !== id);
-      // If the active tab was the one we're closing, move focus to the
-      // previous tab (or transcript if none left).
       setActiveId((cur) => {
         if (cur !== id) return cur;
         const idx = list.findIndex((t) => t.id === id);
@@ -288,29 +294,61 @@ function RightPane({ selected, accent, onOpen }) {
     });
   }, []);
 
-  // Ctrl+Shift+T → new terminal, Ctrl+W → close active terminal.
-  // Only fires when focus is outside an input — we don't want to steal
-  // shortcuts from a live xterm or from the session-search field.
+  const updateActiveTree = React.useCallback((updater) => {
+    setTerminals((list) => list.map(
+      (t) => (t.id === activeId ? { ...t, tree: updater(t.tree) } : t)
+    ));
+  }, [activeId]);
+
+  const splitFocused = React.useCallback((dir) => {
+    if (!focusedPaneId) return;
+    setTerminals((list) => list.map((t) => {
+      if (t.id !== activeId) return t;
+      const { tree, newPaneId } = window.splits.splitNode(t.tree, focusedPaneId, dir);
+      // Focus jumps to the new pane so the user can immediately split
+      // again or start typing.
+      if (newPaneId) setTimeout(() => setFocusedPaneId(newPaneId), 0);
+      return { ...t, tree };
+    }));
+  }, [activeId, focusedPaneId]);
+
+  const closeFocusedPane = React.useCallback(() => {
+    if (!focusedPaneId) return;
+    setTerminals((list) => list.flatMap((t) => {
+      if (t.id !== activeId) return [t];
+      const { tree, nextFocusId } = window.splits.closeNode(t.tree, focusedPaneId);
+      if (tree === null) {
+        // pane was the last one in this tab → close the tab entirely
+        setActiveId((cur) => (cur === t.id ? 'transcript' : cur));
+        return [];
+      }
+      if (nextFocusId) setTimeout(() => setFocusedPaneId(nextFocusId), 0);
+      return [{ ...t, tree }];
+    }));
+  }, [activeId, focusedPaneId]);
+
   React.useEffect(() => {
     function onKey(e) {
       const tgt = e.target;
       const tag = tgt && tgt.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA') return;
-      // let xterm consume keystrokes inside the terminal itself
+      // Keystrokes inside xterm go to the shell — never to our shortcuts.
       if (tgt && tgt.closest && tgt.closest('.xterm')) return;
       if (e.ctrlKey && e.shiftKey && (e.key === 'T' || e.key === 't')) {
-        e.preventDefault();
-        openTerminal();
+        e.preventDefault(); openTerminal();
       } else if (e.ctrlKey && (e.key === 'w' || e.key === 'W') && activeId !== 'transcript') {
-        e.preventDefault();
-        closeTerminal(activeId);
+        e.preventDefault(); closeTerminal(activeId);
+      } else if (e.altKey && e.shiftKey && (e.key === 'H' || e.key === 'h')) {
+        e.preventDefault(); splitFocused('h');
+      } else if (e.altKey && e.shiftKey && (e.key === 'V' || e.key === 'v')) {
+        e.preventDefault(); splitFocused('v');
+      } else if (e.altKey && e.shiftKey && (e.key === 'X' || e.key === 'x')) {
+        e.preventDefault(); closeFocusedPane();
       }
     }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [activeId, openTerminal, closeTerminal]);
-
-  const active = terminals.find((t) => t.id === activeId) || null;
+  }, [activeId, openTerminal, closeTerminal, splitFocused, closeFocusedPane]);
 
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
@@ -318,13 +356,11 @@ function RightPane({ selected, accent, onOpen }) {
         display: 'flex', gap: 2, padding: '6px 10px 0', alignItems: 'center',
         borderBottom: '1px solid rgba(255,255,255,0.06)',
       }}>
-        {/* Transcript tab — always first, never closable */}
         <button onClick={() => setActiveId('transcript')}
           style={tabBtnStyle(activeId === 'transcript', accent)}
           data-testid="right-tab-transcript">
           Transcript
         </button>
-        {/* Terminal tabs */}
         {terminals.map((t) => (
           <button key={t.id} onClick={() => setActiveId(t.id)}
             style={tabBtnStyle(activeId === t.id, accent)}
@@ -339,7 +375,6 @@ function RightPane({ selected, accent, onOpen }) {
               title="Close (Ctrl+W)">×</span>
           </button>
         ))}
-        {/* New-terminal button */}
         <button onClick={openTerminal}
           title="New terminal (Ctrl+Shift+T)"
           data-testid="right-tab-new-terminal"
@@ -348,16 +383,53 @@ function RightPane({ selected, accent, onOpen }) {
             background: 'transparent', color: 'rgba(255,255,255,0.45)',
             border: 'none', cursor: 'pointer',
           }}>+</button>
+        {activeId !== 'transcript' && (
+          <div style={{
+            marginLeft: 'auto', display: 'flex', gap: 4,
+            paddingBottom: 3, fontSize: 11, color: 'rgba(255,255,255,0.5)',
+          }}>
+            <button onClick={() => splitFocused('h')}
+              data-testid="split-h-btn" title="Split right (Alt+Shift+H)"
+              style={toolbarBtnStyle}>⊟ split right</button>
+            <button onClick={() => splitFocused('v')}
+              data-testid="split-v-btn" title="Split down (Alt+Shift+V)"
+              style={toolbarBtnStyle}>⊞ split down</button>
+            <button onClick={closeFocusedPane}
+              data-testid="close-pane-btn" title="Close pane (Alt+Shift+X)"
+              style={toolbarBtnStyle}>× close pane</button>
+          </div>
+        )}
       </div>
-      {/* Body — mount only the active tab's content. Terminal tabs
-          currently restart their PTY on switch; splits/persistence come
-          in PR #5. */}
-      {activeId === 'transcript'
-        ? <Transcript session={selected} accent={accent} onOpen={onOpen}/>
-        : (active ? <TerminalPane spawn={active.spawn}/> : null)}
+
+      {/* Body. Transcript + each terminal tab lives in its own div that
+          is display:none when inactive — this preserves the xterm
+          viewports and their WebSockets across tab switches. */}
+      <div style={{
+        flex: 1, display: activeId === 'transcript' ? 'flex' : 'none',
+        flexDirection: 'column', minHeight: 0,
+      }}>
+        <Transcript session={selected} accent={accent} onOpen={onOpen}/>
+      </div>
+      {terminals.map((t) => (
+        <div key={t.id} style={{
+          flex: 1, display: activeId === t.id ? 'flex' : 'none',
+          flexDirection: 'column', minHeight: 0, padding: 4,
+        }}>
+          <TileTree tree={t.tree} focusedId={focusedPaneId}
+            onFocus={setFocusedPaneId}
+            onUpdateTree={(updater) => updateActiveTree(updater)}/>
+        </div>
+      ))}
     </div>
   );
 }
+
+const toolbarBtnStyle = {
+  padding: '4px 8px', fontSize: 11, fontFamily: 'Inter, sans-serif',
+  background: 'transparent', color: 'rgba(255,255,255,0.5)',
+  border: '1px solid rgba(255,255,255,0.08)', borderRadius: 4,
+  cursor: 'pointer',
+};
 
 function tabBtnStyle(active, accent) {
   return {
