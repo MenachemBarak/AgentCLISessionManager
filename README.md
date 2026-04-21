@@ -61,7 +61,7 @@ Requires Edge WebView2, which ships pre-installed on every Windows 11 machine.
 ### 2. `pipx` (recommended for CLI use)
 
 ```bash
-pipx install git+https://github.com/MenachemBarak/AgentCLISessionManager.git@v0.6.0
+pipx install git+https://github.com/MenachemBarak/AgentCLISessionManager.git@v0.7.0
 claude-sessions-viewer
 ```
 

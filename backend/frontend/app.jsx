@@ -187,10 +187,31 @@ function App() {
   }
 
   function handleOpen(session, mode) {
-    if (window.openSession) window.openSession(session.id, mode);
+    if (mode === 'in-viewer') {
+      // Route through RightPane via a window-registered callback
+      // (set by RightPane.useEffect). Not calling window.openSession —
+      // that's only for the external Windows Terminal path.
+      if (window.openInViewer) {
+        window.openInViewer(session);
+      } else {
+        console.warn('[app] openInViewer not registered');
+      }
+    } else if (window.openSession) {
+      window.openSession(session.id, mode);
+    }
     const short = `${session.title.slice(0, 40)}${session.title.length > 40 ? '…' : ''}`;
-    const prefixes = { focus: 'Focused →', split: 'Split pane →', tab: 'New tab →' };
-    const icons = { focus: <IconFocus size={13}/>, split: <IconSplit size={13}/>, tab: <IconNewTab size={13}/> };
+    const prefixes = {
+      focus: 'Focused →',
+      split: 'Split pane →',
+      tab: 'New tab →',
+      'in-viewer': 'Opened in viewer →',
+    };
+    const icons = {
+      focus: <IconFocus size={13}/>,
+      split: <IconSplit size={13}/>,
+      tab: <IconNewTab size={13}/>,
+      'in-viewer': <IconNewTab size={13}/>,
+    };
     pushToast({ text: `${prefixes[mode] || 'Open →'} ${short}`, icon: icons[mode] || <IconNewTab size={13}/> });
   }
 
@@ -270,14 +291,39 @@ function RightPane({ selected, accent, onOpen }) {
   // active tab.
   const [focusedPaneId, setFocusedPaneId] = React.useState(null);
 
-  const openTerminal = React.useCallback(() => {
+  const openTerminal = React.useCallback((opts) => {
+    // opts: { spawn, label } — when omitted we default to an ad-hoc cmd.exe.
     _terminalSeq += 1;
     const id = `term-${_terminalSeq}`;
-    const pane = window.splits.makePane({ cmd: ['cmd.exe'] });
-    setTerminals((list) => [...list, { id, label: `Terminal ${_terminalSeq}`, tree: pane }]);
+    const spawn = opts?.spawn || { cmd: ['cmd.exe'] };
+    const label = opts?.label || `Terminal ${_terminalSeq}`;
+    const pane = window.splits.makePane(spawn);
+    setTerminals((list) => [...list, { id, label, tree: pane }]);
     setActiveId(id);
     setFocusedPaneId(pane.id);
   }, []);
+
+  // Register a global entry so session-row's "In viewer" button can spawn
+  // a terminal running that session's resume command. Only registered
+  // while RightPane is mounted; unregistered on unmount.
+  React.useEffect(() => {
+    window.openInViewer = (session) => {
+      if (!session || !session.id) return;
+      const shortId = session.id.slice(0, 8);
+      // Label prefers userLabel > claudeTitle > "Resume <sid8>".
+      const label = session.userLabel
+        || (session.claudeTitle ? session.claudeTitle.slice(0, 24) : null)
+        || `Resume ${shortId}`;
+      openTerminal({
+        spawn: {
+          provider: session.provider || 'claude-code',
+          sessionId: session.id,
+        },
+        label,
+      });
+    };
+    return () => { if (window.openInViewer) delete window.openInViewer; };
+  }, [openTerminal]);
 
   const closeTerminal = React.useCallback((id, e) => {
     if (e) { e.stopPropagation(); }

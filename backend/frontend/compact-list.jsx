@@ -162,6 +162,10 @@ function CompactRow({ session, accent, selected, onSelect, onOpen, onHover, onLe
           <>
             <IconBtn label="New tab" onClick={(e) => { e.stopPropagation(); onOpen(session, 'tab'); }} Icon={IconNewTab}/>
             <IconBtn label="Split" onClick={(e) => { e.stopPropagation(); onOpen(session, 'split'); }} Icon={IconSplit}/>
+            {/* "In viewer" spawns the session inside an embedded terminal
+                tab in the right pane instead of a Windows Terminal window.
+                Uses the provider's `resume_command` via /api/pty/ws. */}
+            <IconBtn label="In viewer" onClick={(e) => { e.stopPropagation(); onOpen(session, 'in-viewer'); }} Icon={IconNewTab}/>
           </>
         )}
         <span style={{ flex: 1 }}/>
