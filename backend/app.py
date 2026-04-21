@@ -26,6 +26,8 @@ from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
 from backend.__version__ import __version__
+from backend.providers import PROVIDERS
+from backend.providers import available as _available_providers
 
 IS_WINDOWS = platform.system() == "Windows"
 
@@ -364,6 +366,25 @@ def status() -> dict[str, Any]:
     }
 
 
+@app.get("/api/providers")
+def list_providers() -> dict[str, Any]:
+    """List every known agent-CLI provider and whether it's active on this
+    machine (home dir exists). Only `claude-code` is implemented today; the
+    registry is the extension point — new adapters drop into
+    `backend/providers/<agent>.py` and register in `PROVIDERS`.
+    """
+    registered = []
+    available_ids = {p.name for p in _available_providers()}
+    for pid, cls in PROVIDERS.items():
+        # instantiate lazily to get display_name without triggering any I/O
+        try:
+            display = cls.display_name
+        except AttributeError:
+            display = pid
+        registered.append({"id": pid, "displayName": display, "available": pid in available_ids})
+    return {"registered": registered, "active": sorted(available_ids)}
+
+
 # ─────────────────────── API ───────────────────────
 class OpenReq(BaseModel):
     sessionId: str
@@ -386,6 +407,10 @@ def list_sessions(limit: int = 1000, offset: int = 0) -> dict[str, Any]:
     items: list[dict[str, Any]] = []
     for meta in _INDEX.values():
         m: dict[str, Any] = {k: v for k, v in meta.items() if not k.startswith("_")}
+        # Tag every row with its provider — frontend uses this for the
+        # per-provider filter, and API consumers use it to know which
+        # agent-CLI adapter to route follow-up requests through.
+        m.setdefault("provider", "claude-code")
         if m["id"] in active_ids:
             m["active"] = True
             m["activityLabel"] = _activity_for(Path(meta["path"]))
@@ -422,6 +447,7 @@ def session_preview(session_id: str) -> dict[str, Any]:
     deep = _scan_session_meta(Path(meta["path"]), deep=True)
     if not deep:
         raise HTTPException(404, "unreadable")
+    deep.setdefault("provider", "claude-code")
     return deep
 
 

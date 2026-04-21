@@ -6,6 +6,36 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-04-20
+
+### Added
+- **Multi-provider architecture** — new `backend/providers/` package introduces
+  a `SessionProvider` protocol and a `PROVIDERS` registry. Today only
+  `ClaudeCodeProvider` is implemented; adding Codex, GitHub Copilot CLI,
+  Gemini CLI (etc.) is now a matter of dropping a new file in the package
+  and registering its id — no FastAPI / frontend changes required.
+- `GET /api/providers` — lists every registered provider with
+  `{id, displayName, available}` so the UI can render a per-provider filter
+  once more than one adapter exists.
+- Every row returned by `/api/sessions` and `/api/sessions/<id>/preview`
+  now carries a `"provider"` field (`"claude-code"` for now) — the frontend
+  uses this to route follow-up calls through the correct adapter.
+- `tests/test_providers.py` — 12 tests cover: registry shape, protocol
+  conformance, graceful skip when a provider's `__init__` raises
+  `ProviderUnavailable`, discover + preview + transcript against the mock
+  fixture, and the new `/api/providers` endpoint.
+
+### Changed
+- Conftest fixtures (`tests/conftest.py`, `tests/test_watcher.py`) no longer
+  purge the entire `backend.*` subtree when reloading the app — only
+  `backend.app` itself — to preserve the identity of
+  `backend.providers.ProviderUnavailable` across test runs.
+
+### Notes
+No behaviour change for Claude Code users — this release lays the foundation
+for the upcoming embedded terminal (tmux-style tabs + splits) and broader
+agent-CLI support. Existing endpoints and UI work identically.
+
 ## [0.4.2] — 2026-04-20
 
 ### Fixed
@@ -159,7 +189,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - "New tab" / "Split" buttons spawn `wt.exe ... claude --resume <uuid>`
   - Self-installing Desktop shortcut launcher
 
-[Unreleased]: https://github.com/MenachemBarak/AgentCLISessionManager/compare/v0.4.2...HEAD
+[Unreleased]: https://github.com/MenachemBarak/AgentCLISessionManager/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/MenachemBarak/AgentCLISessionManager/releases/tag/v0.5.0
 [0.4.2]: https://github.com/MenachemBarak/AgentCLISessionManager/releases/tag/v0.4.2
 [0.4.1]: https://github.com/MenachemBarak/AgentCLISessionManager/releases/tag/v0.4.1
 [0.4.0]: https://github.com/MenachemBarak/AgentCLISessionManager/releases/tag/v0.4.0
