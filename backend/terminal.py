@@ -31,7 +31,7 @@ import shlex
 import threading
 import time
 import uuid
-from collections.abc import Awaitable, Callable
+from collections.abc import Callable, Coroutine
 from typing import Any
 
 log = logging.getLogger(__name__)
@@ -222,7 +222,7 @@ class PtySession:
 
 
 # ─────────────────────── async FastAPI integration ───────────────────
-PtySendFn = Callable[[dict[str, Any]], Awaitable[None]]
+PtySendFn = Callable[[dict[str, Any]], Coroutine[Any, Any, None]]
 
 
 class PtySessionManager:
