@@ -6,6 +6,34 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.9.1] — 2026-04-22
+
+### Fixed
+- **Black-screen regression on malformed persisted layout.** If
+  `~/.claude/viewer-terminal-state.json` held a tile-tree node with
+  any `kind` other than `pane`/`split` (a probe wrote `kind:"leaf"`
+  once), `TileTree` fell through to the split branch and crashed
+  React on `tree.children[0]` — the whole pywebview window rendered
+  pitch-black. `TileTree` now migrates unknown kinds to a fresh pane
+  with a console warning, and rejects malformed splits (missing a
+  2-element `children` array) the same way, so bad persisted state
+  never nukes the UI again.
+
+### Added
+- **Playwright e2e suite under `e2e/`** with a `pages/` Page Object
+  layer (windowChrome / sessionList / updateBanner) and feature
+  tests in `tests/feature/`. `app-boots.spec.ts` catches the exact
+  black-screen class of regression via direct DOM + console-error
+  assertions; `update-flow.spec.ts` exercises the full banner state
+  machine (hidden → available → staged → apply) using a
+  CSV_TEST_MODE-gated `/api/_test/seed-update-state` hook.
+- **Two CI jobs** (`.github/workflows/e2e.yml`): `e2e-dev` runs the
+  suite against `python -m backend.cli` on every PR in under 3 min;
+  `e2e-exe` rebuilds the PyInstaller exe and runs the same suite
+  against the frozen binary — this is the job that catches
+  release-only regressions (pywinpty shell init, PyInstaller data
+  files, etc.) which unit tests can't see.
+
 ## [0.9.0] — 2026-04-22
 
 ### Added

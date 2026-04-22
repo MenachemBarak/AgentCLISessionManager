@@ -126,6 +126,22 @@ function TileTree({ tree, focusedId, onFocus, onUpdateTree, pathPrefix }) {
 
   if (!tree) return null;
 
+  // Defensive migration — an older state file may persist `kind:"leaf"`
+  // (a probe wrote that once) or an unknown kind. Treat anything that's
+  // clearly not a split as a pane so the whole UI doesn't black-screen.
+  if (tree.kind !== 'pane' && tree.kind !== 'split') {
+    // eslint-disable-next-line no-console
+    console.warn('TileTree: unknown node kind', tree.kind, '— treating as pane');
+    tree = { kind: 'pane', id: tree.id || 'pane-recovered', spawn: tree.spawn || { cmd: ['cmd.exe'] } };
+  }
+  // A split without a 2-element children array can't render — fall back
+  // to a fresh pane rather than crash on tree.children[0].
+  if (tree.kind === 'split' && (!Array.isArray(tree.children) || tree.children.length < 2)) {
+    // eslint-disable-next-line no-console
+    console.warn('TileTree: split without 2 children, falling back to pane');
+    tree = { kind: 'pane', id: 'pane-recovered', spawn: { cmd: ['cmd.exe'] } };
+  }
+
   if (tree.kind === 'pane') {
     return (
       <div
