@@ -102,15 +102,47 @@ jobs:
           # session list has rows so boot-smoke-test's waitReady resolves.
           CLAUDE_HOME: ${{ github.workspace }}\tests\fixtures\claude-home
         run: |
-          Start-Process -FilePath .\dist\csv-e2e.exe `
+          # Capture stdout/stderr: `console=False` in pyinstaller.spec
+          # means the frozen exe has no stdio streams by default, so a
+          # crash is invisible without explicit redirection. Piping to
+          # files lets us dump them on failure.
+          $stdoutLog = Join-Path $env:RUNNER_TEMP 'csv-exe.stdout.log'
+          $stderrLog = Join-Path $env:RUNNER_TEMP 'csv-exe.stderr.log'
+          Write-Output "launching exe, stdout=$stdoutLog stderr=$stderrLog"
+          $proc = Start-Process -FilePath .\dist\csv-e2e.exe `
             -ArgumentList '--server-only','--port','8769','--no-browser' `
-            -WindowStyle Hidden
-          # Wait until /api/status is reachable (exe starts a uvicorn worker).
-          for ($i = 0; $i -lt 30; $i++) {
+            -WindowStyle Hidden `
+            -RedirectStandardOutput $stdoutLog `
+            -RedirectStandardError $stderrLog `
+            -PassThru
+          Write-Output "spawned pid=$($proc.Id)"
+          $ready = $false
+          for ($i = 0; $i -lt 60; $i++) {
+            if ($proc.HasExited) {
+              Write-Output "::error::exe exited during startup with code $($proc.ExitCode) after $i polls"
+              break
+            }
             try {
               $r = Invoke-RestMethod 'http://127.0.0.1:8769/api/status' -TimeoutSec 2
-              if ($r.ready) { Write-Output "ready after $i polls (v$($r.version))"; break }
+              if ($r.ready) {
+                Write-Output "ready after $i polls (v$($r.version))"
+                $ready = $true
+                break
+              }
             } catch { Start-Sleep -Seconds 1 }
+          }
+          if (-not $ready) {
+            Write-Output '::group::exe stdout'
+            if (Test-Path $stdoutLog) { Get-Content $stdoutLog } else { Write-Output '(no stdout)' }
+            Write-Output '::endgroup::'
+            Write-Output '::group::exe stderr'
+            if (Test-Path $stderrLog) { Get-Content $stderrLog } else { Write-Output '(no stderr)' }
+            Write-Output '::endgroup::'
+            Write-Output '::group::app log (~/.claude)'
+            $appLog = Join-Path $env:USERPROFILE '.claude\claude-sessions-viewer.log'
+            if (Test-Path $appLog) { Get-Content -Tail 200 $appLog } else { Write-Output '(no app log)' }
+            Write-Output '::endgroup::'
+            throw 'exe never became ready'
           }
 
       - name: Run Playwright against the exe
