@@ -356,9 +356,23 @@ class ClaudeCodeProvider:
         return msgs
 
     def resume_command(self, session_id: str) -> list[str]:
-        """argv to resume the session in a shell. Consumed by `/api/open`
-        (wrapped in `wt.exe`) and by the internal terminal (PR #6)."""
-        return ["claude", "--resume", session_id]
+        """argv to resume the session in a shell. Consumed by every resume
+        path — `/api/open` (wrapped in `wt.exe`), the internal PTY
+        terminal, and (upcoming) the restart-resume ping flow.
+
+        The `--dangerously-skip-permissions` flag is always included: the
+        viewer is a local tool running the user's own agents on their own
+        machine, and permission prompts on resume stall unattended
+        workflows (the whole point of the "continue from where you left
+        off" flow is that the user ISN'T there to click OK). All resume
+        call sites funnel through this function, so flipping the default
+        here covers every path without drift.
+
+        Security note: the flag bypasses Claude Code's per-action
+        confirmation. Do not repurpose this function for a multi-tenant
+        or remote-operator context without revisiting the default.
+        """
+        return ["claude", "--dangerously-skip-permissions", "--resume", session_id]
 
     # ── watchdog ─────────────────────────────────────────────────
     def start_watcher(self, on_change: WatcherCallback) -> None:
