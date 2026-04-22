@@ -336,8 +336,47 @@ def _all_jsonl() -> list[Path]:
     return [p for p in PROJECTS_DIR.rglob("*.jsonl") if _is_indexable_session_path(p)]
 
 
-def build_index() -> None:
+def _cleanup_stale_active_markers() -> int:
+    """Delete `~/.claude/sessions/<pid>.json` files whose PID no longer
+    exists. Called on startup + on explicit rescan — after a power-loss /
+    OS reboot these stale markers accumulate and cause the `ACTIVE` panel
+    to show ghost-sessions whose processes died hard. Returns the number
+    of stale files removed."""
+    if not ACTIVE_DIR.is_dir():
+        return 0
+    removed = 0
+    for f in ACTIVE_DIR.glob("*.json"):
+        try:
+            data = json.loads(f.read_text(encoding="utf-8"))
+            pid = int(data.get("pid") or 0)
+        except Exception:  # noqa: BLE001
+            # Unreadable / corrupt marker — drop it.
+            try:
+                f.unlink()
+                removed += 1
+            except OSError:
+                pass
+            continue
+        if pid and not psutil.pid_exists(pid):
+            try:
+                f.unlink()
+                removed += 1
+            except OSError:
+                pass
+    return removed
+
+
+def build_index(force: bool = False) -> None:
+    """(Re)build the in-memory session index.
+
+    `force=True` clears the cache first so a full rescan happens even when
+    the file mtimes haven't changed. Useful after a power loss / app
+    restart where we want to re-read everything fresh.
+    """
     global _INDEX_BUILT
+    if force:
+        _INDEX.clear()
+    _cleanup_stale_active_markers()
     files = _all_jsonl()
     _INDEX_PROGRESS["total"] = len(files)
     _INDEX_PROGRESS["done"] = 0
@@ -406,6 +445,60 @@ async def _startup() -> None:
     # kick off a non-blocking check for a newer GitHub Release.
     updater.remove_stale_old_file()
     updater.start_background_check()
+
+
+@app.post("/api/rescan")
+def rescan() -> dict[str, Any]:
+    """Drop the cached index and the stale active-session markers, then
+    rebuild from disk. Surfaced to the UI as a "Rescan" button for when
+    the system has been through a power loss and `ACTIVE` might show
+    stale rows."""
+    removed = _cleanup_stale_active_markers()
+    build_index(force=True)
+    return {
+        "ok": True,
+        "staleActiveMarkersRemoved": removed,
+        "indexed": _INDEX_PROGRESS.get("done", 0),
+    }
+
+
+LAYOUT_STATE_FILE = CLAUDE_HOME / "viewer-terminal-state.json"
+
+
+@app.get("/api/layout-state")
+def get_layout_state() -> dict[str, Any]:
+    """Return the persisted terminal-tab + split-tree layout, or an empty
+    default. Frontend reads this on mount to rehydrate the right-pane
+    state (tabs, splits, which sessions were open as terminals)."""
+    try:
+        data = json.loads(LAYOUT_STATE_FILE.read_text(encoding="utf-8"))
+        if isinstance(data, dict):
+            return data
+    except Exception:  # noqa: BLE001
+        pass
+    return {"terminals": [], "activeId": "transcript", "focusedPaneId": None}
+
+
+class LayoutStateReq(BaseModel):
+    terminals: list[dict[str, Any]]
+    activeId: str | None = None
+    focusedPaneId: str | None = None
+
+
+@app.put("/api/layout-state")
+def put_layout_state(req: LayoutStateReq) -> dict[str, Any]:
+    """Persist the current right-pane layout. The frontend calls this on
+    every tab add/close/split/resize so a crash or clean exit doesn't
+    lose the arrangement. We store it per-user at
+    ~/.claude/viewer-terminal-state.json."""
+    LAYOUT_STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "terminals": req.terminals,
+        "activeId": req.activeId,
+        "focusedPaneId": req.focusedPaneId,
+    }
+    LAYOUT_STATE_FILE.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    return {"ok": True}
 
 
 @app.get("/api/update-status")

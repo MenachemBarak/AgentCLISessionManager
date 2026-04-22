@@ -6,6 +6,31 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.8.0] — 2026-04-22
+
+### Added
+- **Terminal layout survives restarts.** The right-pane tile tree —
+  every tab, every split, the active tab id, the focused pane id — is
+  persisted to `~/.claude/viewer-terminal-state.json` after any change
+  (debounced 400 ms). On next launch the viewer rehydrates the layout
+  exactly as you left it. Live PTY processes can't be resurrected, but
+  when you click a restored pane it spawns a fresh PTY running the same
+  command (e.g. `claude --resume <uuid>`) it had before.
+- **Rescan button** in the Active section header. Calls a new
+  `POST /api/rescan` that clears the in-memory index cache, deletes
+  stale `~/.claude/sessions/<pid>.json` markers whose PID is no longer
+  alive, and rebuilds from disk. Essential after a power-loss / hard
+  reboot where the OS didn't get to clean up those markers — they'd
+  otherwise show as ghost-active sessions.
+- **Auto stale-marker cleanup** runs on every startup + every rescan.
+  `build_index(force=True)` is the same code path the button triggers.
+- `GET/PUT /api/layout-state` — endpoints backing the persistence above.
+
+### Notes
+- Layout persistence replaces any ad-hoc scroll/state you had with a
+  canonical per-user snapshot. Delete `~/.claude/viewer-terminal-state.json`
+  to reset to an empty terminal area.
+
 ## [0.7.1] — 2026-04-21
 
 ### Fixed

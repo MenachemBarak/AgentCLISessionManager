@@ -297,18 +297,44 @@ function IconBtn({ label, onClick, Icon }) {
 
 function ActiveSectionCompact({ active, accent, selectedId, onSelect, onOpen, onHover, onLeave, recentlyCreated }) {
   const groups = useMemoCL(() => groupByCwd(active), [active]);
+  const [rescanning, setRescanning] = useStateCL(false);
+  const handleRescan = async (e) => {
+    e.stopPropagation();
+    setRescanning(true);
+    try {
+      await fetch('/api/rescan', { method: 'POST' });
+    } catch {}
+    setTimeout(() => setRescanning(false), 600);
+  };
   return (
     <div style={{ display: 'flex', flexDirection: 'column' }}>
       <SectionHeader
         label={`Active · ${active.length}`}
         right={
           <span style={{
-            display: 'flex', alignItems: 'center', gap: 5,
+            display: 'flex', alignItems: 'center', gap: 8,
             fontFamily: 'JetBrains Mono, monospace',
             fontSize: 9.5, color: 'rgba(255,255,255,0.35)',
           }}>
-            <PulseDot color="#4ade80"/>
-            live
+            <button onClick={handleRescan}
+              disabled={rescanning}
+              data-testid="rescan-btn"
+              title="Rescan sessions & remove stale active markers"
+              style={{
+                background: 'rgba(255,255,255,0.06)',
+                border: '1px solid rgba(255,255,255,0.1)',
+                color: 'rgba(255,255,255,0.55)',
+                fontFamily: 'inherit', fontSize: 9.5,
+                padding: '1px 6px', borderRadius: 3,
+                cursor: rescanning ? 'default' : 'pointer',
+                opacity: rescanning ? 0.4 : 1,
+              }}>
+              {rescanning ? '…' : 'rescan'}
+            </button>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+              <PulseDot color="#4ade80"/>
+              live
+            </span>
           </span>
         }
       />

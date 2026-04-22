@@ -290,6 +290,52 @@ function RightPane({ selected, accent, onOpen }) {
   // ring is visible in practice. Splits act on the focused pane of the
   // active tab.
   const [focusedPaneId, setFocusedPaneId] = React.useState(null);
+  const hydratedRef = React.useRef(false);
+
+  // Hydrate from the server-persisted snapshot on first mount. PTY
+  // processes themselves can't survive a restart — but the tile tree,
+  // tab labels, spawn config, active tab, and focused pane all can.
+  // When the user interacts with a rehydrated tab, its leaves will spawn
+  // fresh PTYs running the same command they had before.
+  React.useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch('/api/layout-state');
+        if (!r.ok) return;
+        const state = await r.json();
+        if (cancelled) return;
+        if (Array.isArray(state.terminals) && state.terminals.length > 0) {
+          // Bump the seq past the restored IDs so new tabs don't collide.
+          const maxSeq = state.terminals.reduce((m, t) => {
+            const n = Number((t.id || '').replace(/^term-/, ''));
+            return isFinite(n) && n > m ? n : m;
+          }, 0);
+          _terminalSeq = Math.max(_terminalSeq, maxSeq);
+          setTerminals(state.terminals);
+          if (state.activeId) setActiveId(state.activeId);
+          if (state.focusedPaneId) setFocusedPaneId(state.focusedPaneId);
+        }
+      } catch {}
+      hydratedRef.current = true;
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  // Debounced persist: every mutation to the layout state writes a tiny
+  // JSON blob to ~/.claude/viewer-terminal-state.json. 400 ms debounce is
+  // enough to absorb drag-to-resize storms without spamming disk I/O.
+  React.useEffect(() => {
+    if (!hydratedRef.current) return;
+    const handle = setTimeout(() => {
+      fetch('/api/layout-state', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ terminals, activeId, focusedPaneId }),
+      }).catch(() => {});
+    }, 400);
+    return () => clearTimeout(handle);
+  }, [terminals, activeId, focusedPaneId]);
 
   const openTerminal = React.useCallback((opts) => {
     // opts: { spawn, label } — when omitted we default to an ad-hoc cmd.exe.
