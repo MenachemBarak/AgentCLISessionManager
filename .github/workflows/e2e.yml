@@ -94,21 +94,22 @@ jobs:
           npm ci --no-audit --no-fund
           npx playwright install --with-deps chromium
 
-      - name: Launch built exe in server-only mode
+      - name: Launch exe + run Playwright
         shell: pwsh
         env:
           CSV_TEST_MODE: "1"
           # Same fixture tree the dev-server job uses — guarantees the
           # session list has rows so boot-smoke-test's waitReady resolves.
           CLAUDE_HOME: ${{ github.workspace }}\tests\fixtures\claude-home
+          CI: "1"
+          CSV_APP_URL: http://127.0.0.1:8769
         run: |
-          # Capture stdout/stderr: `console=False` in pyinstaller.spec
-          # means the frozen exe has no stdio streams by default, so a
-          # crash is invisible without explicit redirection. Piping to
-          # files lets us dump them on failure.
+          # Launching the exe in one step and running Playwright in the
+          # next causes the runner to orphan/kill the child between steps
+          # — the exe was "ready" but gone by the time tests ran. Keeping
+          # both in one step pins the exe to this shell's lifetime.
           $stdoutLog = Join-Path $env:RUNNER_TEMP 'csv-exe.stdout.log'
           $stderrLog = Join-Path $env:RUNNER_TEMP 'csv-exe.stderr.log'
-          Write-Output "launching exe, stdout=$stdoutLog stderr=$stderrLog"
           $proc = Start-Process -FilePath .\dist\csv-e2e.exe `
             -ArgumentList '--server-only','--port','8769','--no-browser' `
             -WindowStyle Hidden `
@@ -116,41 +117,56 @@ jobs:
             -RedirectStandardError $stderrLog `
             -PassThru
           Write-Output "spawned pid=$($proc.Id)"
-          $ready = $false
-          for ($i = 0; $i -lt 60; $i++) {
-            if ($proc.HasExited) {
-              Write-Output "::error::exe exited during startup with code $($proc.ExitCode) after $i polls"
-              break
-            }
-            try {
-              $r = Invoke-RestMethod 'http://127.0.0.1:8769/api/status' -TimeoutSec 2
-              if ($r.ready) {
-                Write-Output "ready after $i polls (v$($r.version))"
-                $ready = $true
-                break
-              }
-            } catch { Start-Sleep -Seconds 1 }
-          }
-          if (-not $ready) {
+
+          function Dump-Logs {
             Write-Output '::group::exe stdout'
             if (Test-Path $stdoutLog) { Get-Content $stdoutLog } else { Write-Output '(no stdout)' }
             Write-Output '::endgroup::'
             Write-Output '::group::exe stderr'
             if (Test-Path $stderrLog) { Get-Content $stderrLog } else { Write-Output '(no stderr)' }
             Write-Output '::endgroup::'
-            Write-Output '::group::app log (~/.claude)'
+            Write-Output '::group::app log'
             $appLog = Join-Path $env:USERPROFILE '.claude\claude-sessions-viewer.log'
             if (Test-Path $appLog) { Get-Content -Tail 200 $appLog } else { Write-Output '(no app log)' }
             Write-Output '::endgroup::'
-            throw 'exe never became ready'
           }
 
-      - name: Run Playwright against the exe
-        working-directory: e2e
-        env:
-          CI: "1"
-          CSV_APP_URL: http://127.0.0.1:8769
-        run: npx playwright test
+          try {
+            # Poll for /api/status readiness with exit-aware bail.
+            $ready = $false
+            for ($i = 0; $i -lt 60; $i++) {
+              if ($proc.HasExited) {
+                Write-Output "::error::exe exited during startup with code $($proc.ExitCode) after $i polls"
+                break
+              }
+              try {
+                $r = Invoke-RestMethod 'http://127.0.0.1:8769/api/status' -TimeoutSec 2
+                if ($r.ready) {
+                  Write-Output "ready after $i polls (v$($r.version))"
+                  $ready = $true
+                  break
+                }
+              } catch { Start-Sleep -Seconds 1 }
+            }
+            if (-not $ready) { Dump-Logs; throw 'exe never became ready' }
+
+            # Run Playwright while the exe is still alive in this shell.
+            Push-Location e2e
+            try {
+              npx playwright test
+              if ($LASTEXITCODE -ne 0) {
+                Dump-Logs
+                throw "playwright exited with $LASTEXITCODE"
+              }
+            } finally {
+              Pop-Location
+            }
+          } finally {
+            if ($proc -and -not $proc.HasExited) {
+              Write-Output "stopping exe pid=$($proc.Id)"
+              Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+            }
+          }
 
       - name: Upload Playwright report on failure
         if: failure()
@@ -160,7 +176,7 @@ jobs:
           path: e2e/playwright-report
           retention-days: 14
 
-      - name: Stop exe
+      - name: Clean up any orphaned exe process
         if: always()
         shell: pwsh
         run: Get-Process csv-e2e -ErrorAction SilentlyContinue | Stop-Process -Force
