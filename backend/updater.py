@@ -260,7 +260,11 @@ def apply_update() -> dict[str, str | bool | int]:
 
     Only works on Windows + frozen exe + a staged `.new` sibling.
     """
-    if sys.platform != "win32":
+    # platform.system() is a runtime call — mypy won't narrow based on the
+    # test runner's OS and flag the second guard as unreachable.
+    import platform as _platform
+
+    if _platform.system() != "Windows":
         return {"ok": False, "message": "apply is Windows-only for now"}
     if not getattr(sys, "frozen", False):
         return {"ok": False, "message": "self-apply only available in the packaged .exe"}

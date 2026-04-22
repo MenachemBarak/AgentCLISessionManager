@@ -525,9 +525,11 @@ def update_apply() -> dict[str, Any]:
     """
     result = updater.apply_update()
     if result.get("ok"):
+
         def _suicide() -> None:
             time.sleep(0.8)
             os._exit(0)
+
         threading.Thread(target=_suicide, name="cs-update-exit", daemon=True).start()
     return dict(result)
 

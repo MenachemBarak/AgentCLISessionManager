@@ -14,8 +14,14 @@ def test_update_status_when_unchecked_has_safe_defaults(client):
     assert r.status_code == 200
     body = r.json()
     # Shape contract — the banner reads these exact keys.
-    for key in ("currentVersion", "latestVersion", "updateAvailable", "checked",
-                "downloadProgress", "staged"):
+    for key in (
+        "currentVersion",
+        "latestVersion",
+        "updateAvailable",
+        "checked",
+        "downloadProgress",
+        "staged",
+    ):
         assert key in body
     assert isinstance(body["updateAvailable"], bool)
     assert isinstance(body["staged"], bool)
@@ -55,7 +61,9 @@ def test_apply_refuses_in_dev_mode(client, app_module):
 def test_apply_update_without_staged_refuses(app_module, monkeypatch):
     updater = app_module.updater
     # Force the two early guards to pass so we reach the staged-check.
-    monkeypatch.setattr(updater.sys, "platform", "win32", raising=False)
+    import platform as _platform
+
+    monkeypatch.setattr(_platform, "system", lambda: "Windows")
     monkeypatch.setattr(updater.sys, "frozen", True, raising=False)
     with updater.STATE.lock:
         prev_staged = updater.STATE.staged_path
