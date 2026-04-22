@@ -1,0 +1,182 @@
+name: E2E
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  # Runs the Playwright suite against the dev server (python -m backend.cli).
+  # Fast (no PyInstaller build) so every PR gets UI feedback in under 3 min.
+  e2e-dev:
+    name: e2e (dev server)
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: e2e/package-lock.json
+
+      - name: Install Playwright
+        working-directory: e2e
+        run: |
+          npm ci --no-audit --no-fund
+          npx playwright install --with-deps chromium
+
+      - name: Run Playwright
+        working-directory: e2e
+        env:
+          CI: "1"
+          CSV_TEST_MODE: "1"
+        run: npx playwright test
+
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-dev
+          path: e2e/playwright-report
+          retention-days: 14
+
+  # Builds the actual PyInstaller exe and runs the SAME Playwright suite
+  # against it — this is the job that catches release-only regressions
+  # like the pywinpty 3.x STATUS_CONTROL_C_EXIT bug.
+  e2e-exe:
+    name: e2e (built exe)
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install deps + PyInstaller
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+          pip install pyinstaller
+
+      - name: Build windowed exe
+        run: pyinstaller pyinstaller.spec --noconfirm
+        shell: bash
+
+      - name: Rename exe to the expected launcher name
+        run: |
+          Move-Item -Force dist\claude-sessions-viewer.exe dist\csv-e2e.exe
+        shell: pwsh
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: e2e/package-lock.json
+
+      - name: Install Playwright
+        working-directory: e2e
+        run: |
+          npm ci --no-audit --no-fund
+          npx playwright install --with-deps chromium
+
+      - name: Launch exe + run Playwright
+        shell: pwsh
+        env:
+          CSV_TEST_MODE: "1"
+          # Same fixture tree the dev-server job uses — guarantees the
+          # session list has rows so boot-smoke-test's waitReady resolves.
+          CLAUDE_HOME: ${{ github.workspace }}\tests\fixtures\claude-home
+          CI: "1"
+          CSV_APP_URL: http://127.0.0.1:8769
+        run: |
+          # Launching the exe in one step and running Playwright in the
+          # next causes the runner to orphan/kill the child between steps
+          # — the exe was "ready" but gone by the time tests ran. Keeping
+          # both in one step pins the exe to this shell's lifetime.
+          $stdoutLog = Join-Path $env:RUNNER_TEMP 'csv-exe.stdout.log'
+          $stderrLog = Join-Path $env:RUNNER_TEMP 'csv-exe.stderr.log'
+          $proc = Start-Process -FilePath .\dist\csv-e2e.exe `
+            -ArgumentList '--server-only','--port','8769','--no-browser' `
+            -WindowStyle Hidden `
+            -RedirectStandardOutput $stdoutLog `
+            -RedirectStandardError $stderrLog `
+            -PassThru
+          Write-Output "spawned pid=$($proc.Id)"
+
+          function Dump-Logs {
+            Write-Output '::group::exe stdout'
+            if (Test-Path $stdoutLog) { Get-Content $stdoutLog } else { Write-Output '(no stdout)' }
+            Write-Output '::endgroup::'
+            Write-Output '::group::exe stderr'
+            if (Test-Path $stderrLog) { Get-Content $stderrLog } else { Write-Output '(no stderr)' }
+            Write-Output '::endgroup::'
+            Write-Output '::group::app log'
+            $appLog = Join-Path $env:USERPROFILE '.claude\claude-sessions-viewer.log'
+            if (Test-Path $appLog) { Get-Content -Tail 200 $appLog } else { Write-Output '(no app log)' }
+            Write-Output '::endgroup::'
+          }
+
+          try {
+            # Poll for /api/status readiness with exit-aware bail.
+            $ready = $false
+            for ($i = 0; $i -lt 60; $i++) {
+              if ($proc.HasExited) {
+                Write-Output "::error::exe exited during startup with code $($proc.ExitCode) after $i polls"
+                break
+              }
+              try {
+                $r = Invoke-RestMethod 'http://127.0.0.1:8769/api/status' -TimeoutSec 2
+                if ($r.ready) {
+                  Write-Output "ready after $i polls (v$($r.version))"
+                  $ready = $true
+                  break
+                }
+              } catch { Start-Sleep -Seconds 1 }
+            }
+            if (-not $ready) { Dump-Logs; throw 'exe never became ready' }
+
+            # Run Playwright while the exe is still alive in this shell.
+            Push-Location e2e
+            try {
+              npx playwright test
+              if ($LASTEXITCODE -ne 0) {
+                Dump-Logs
+                throw "playwright exited with $LASTEXITCODE"
+              }
+            } finally {
+              Pop-Location
+            }
+          } finally {
+            if ($proc -and -not $proc.HasExited) {
+              Write-Output "stopping exe pid=$($proc.Id)"
+              Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+            }
+          }
+
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-exe
+          path: e2e/playwright-report
+          retention-days: 14
+
+      - name: Clean up any orphaned exe process
+        if: always()
+        shell: pwsh
+        run: Get-Process csv-e2e -ErrorAction SilentlyContinue | Stop-Process -Force

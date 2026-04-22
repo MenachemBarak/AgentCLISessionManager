@@ -174,7 +174,7 @@ function UpdateBanner({ accent }) {
   const progress = st.downloadProgress || 0;
 
   return (
-    <div style={{
+    <div data-testid="update-banner" style={{
       flexShrink: 0,
       padding: '7px 14px',
       display: 'flex', alignItems: 'center', gap: 10,

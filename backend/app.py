@@ -515,6 +515,29 @@ def update_download() -> dict[str, Any]:
     return updater.download_and_stage()
 
 
+class _TestSeedReq(BaseModel):
+    latestVersion: str
+    checked: bool = True
+    staged: bool = False
+
+
+@app.post("/api/_test/seed-update-state")
+def _test_seed_update_state(req: _TestSeedReq) -> dict[str, Any]:
+    """Test-only hook — only active when CSV_TEST_MODE=1.
+
+    Lets Playwright force the updater state to "newer version available"
+    without waiting for a real release. The env-gate is checked per
+    request so a running exe cannot be flipped into test mode remotely.
+    """
+    if os.environ.get("CSV_TEST_MODE") != "1":
+        raise HTTPException(status_code=404, detail="not found")
+    with updater.STATE.lock:
+        updater.STATE.latest_version = req.latestVersion
+        updater.STATE.checked = req.checked
+        updater.STATE.staged_path = "fake-staged.exe.new" if req.staged else None
+    return {"ok": True, "snapshot": updater.STATE.snapshot()}
+
+
 @app.post("/api/update/apply")
 def update_apply() -> dict[str, Any]:
     """Launch the Windows swap helper, then schedule our own exit.
