@@ -6,6 +6,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.9.4] — 2026-04-23
+
+### Added
+- **Auto-ping resumed sessions after a viewer restart.** Every Claude
+  Code session tab that was open before the viewer shut down (crash,
+  reboot, or self-update) is now re-opened on the next launch and
+  receives the message
+      `SOFTWARE RESTARTED - GO ON FROM WHERE YOU LEFT OFF`
+  automatically, so long-running agent workflows resume without the
+  user needing to click or type. Scope is tight: the ping only fires
+  for tabs restored from persisted layout on this boot, once per
+  `sessionId`, ~5s after the PTY reports ready (gives `claude --resume`
+  time to show its prompt). New "In viewer" clicks do NOT trigger
+  pings. Pairs with v0.9.3's `--dangerously-skip-permissions` default
+  — an unattended resume with a permission prompt would stall.
+
 ## [0.9.3] — 2026-04-23
 
 ### Changed
