@@ -11,11 +11,21 @@ paths-ignore:
   - "shots/**"
   - "docs/**"
 
-# Known-reviewed findings. The subprocess call in backend/app.py::open_session
-# is protected by: UUID regex validation of sessionId, enum validation of
-# mode, pathlib canonicalization of cwd, and shell=False. See SECURITY.md.
+# Known-reviewed findings. See SECURITY.md for each rationale.
 query-filters:
+  # open_session (wt.exe spawn) — sessionId goes through _UUID_RE.match().group(0),
+  # mode is enum-validated, cwd pathlib-resolved, shell=False. The regex-clean
+  # sid is NOT a sink CodeQL's taint tracker recognises.
   - exclude:
       id: py/command-line-injection
+      paths:
+        - backend/app.py
+  # pty_websocket — `cwd` arrives from the loopback WebSocket (our own frontend),
+  # is pathlib-resolved, is_dir() checked, and only used as `cwd=` to pywinpty.
+  # We don't open/read/write the path; pywinpty itself validates before spawn.
+  # The WS is bound to 127.0.0.1:<ephemeral> and served by the same process
+  # the user is interacting with — no external attacker surface.
+  - exclude:
+      id: py/path-injection
       paths:
         - backend/app.py
