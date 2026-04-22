@@ -1268,7 +1268,25 @@ async def pty_websocket(websocket: WebSocket) -> None:
 
         cols = int(first.get("cols", 80))
         rows = int(first.get("rows", 24))
-        cwd = first.get("cwd")
+
+        # cwd comes from the session row (for resume spawns) or nothing (for
+        # ad-hoc shells). Pin down a safe value:
+        #   1. If the client passed a cwd that exists as a directory, use it.
+        #   2. If it passed a cwd that no longer exists (project was moved /
+        #      deleted), fall back to the user's home directory rather than
+        #      let pywinpty fail mid-spawn with a cryptic error.
+        #   3. If nothing was passed, pywinpty inherits this process's cwd.
+        cwd_raw = first.get("cwd")
+        cwd: str | None = None
+        if isinstance(cwd_raw, str) and cwd_raw:
+            try:
+                cwd_path = Path(cwd_raw).resolve(strict=False)
+                if cwd_path.is_dir():
+                    cwd = str(cwd_path)
+                else:
+                    cwd = str(Path.home())
+            except (OSError, ValueError):
+                cwd = str(Path.home())
 
         session = PtySession(cmd=cmd, cols=cols, rows=rows, cwd=cwd)
         # Wire output/exit BEFORE starting the PTY — the first chunk (ConPTY

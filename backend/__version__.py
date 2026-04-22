@@ -10,4 +10,4 @@ Bump this in a commit on `main`, then tag the commit `vX.Y.Z` — the tag
 must match `__version__`.
 """
 
-__version__ = "0.8.0"
+__version__ = "0.8.1"

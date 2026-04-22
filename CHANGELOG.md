@@ -6,6 +6,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.8.1] — 2026-04-22
+
+### Fixed
+- **"In viewer" now opens in the session's cwd.** Clicking the button on a
+  session row used to spawn `claude --resume <uuid>` from the viewer's
+  install dir, not from the directory the session was recorded in —
+  relative-path references inside the session silently broke. The frontend
+  now forwards `session.cwd` in the WebSocket spawn payload; the backend
+  sanity-checks the path exists and falls back to `~` when the project has
+  been moved/deleted. Proven e2e against a seeded cwd=C:/proof-of-cwd:
+  prompt renders as `C:\proof-of-cwd>` and `cd` echoes the same.
+- **Title-bar version was hardcoded** to `v0.4.2` despite every release bump
+  since 0.5. `WindowChrome` now reads `GET /api/status` on first paint and
+  renders the real version — future releases surface correctly without a
+  manual string edit.
+
 ## [0.8.0] — 2026-04-22
 
 ### Added

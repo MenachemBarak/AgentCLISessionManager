@@ -19,6 +19,16 @@ const DEFAULT_TWEAKS = /*EDITMODE-BEGIN*/{
 }/*EDITMODE-END*/;
 
 function WindowChrome({ children, tweaks, onToggleTweaks, selectedCount, activeCount }) {
+  // Fetch the real version from /api/status on first paint. The hardcoded
+  // "v0.4.2" that used to live below was silently stale across every 0.5+
+  // release — users saw 0.4.2 in the title bar while running 0.8.0.
+  const [versionLabel, setVersionLabel] = React.useState('');
+  React.useEffect(() => {
+    fetch('/api/status')
+      .then((r) => r.json())
+      .then((s) => { if (s && s.version) setVersionLabel(`v${s.version}`); })
+      .catch(() => {});
+  }, []);
   return (
     <div style={{
       width: '100vw', height: '100vh',
@@ -61,7 +71,7 @@ function WindowChrome({ children, tweaks, onToggleTweaks, selectedCount, activeC
           <span style={{
             fontFamily: 'JetBrains Mono, monospace', fontSize: 10.5,
             color: 'rgba(255,255,255,0.3)',
-          }}>v0.4.2</span>
+          }}>{versionLabel}</span>
         </div>
         <span style={{ flex: 1 }}/>
         <div style={{
@@ -364,6 +374,11 @@ function RightPane({ selected, accent, onOpen }) {
         spawn: {
           provider: session.provider || 'claude-code',
           sessionId: session.id,
+          // Match external "New tab" behaviour: start the resumed shell in
+          // the session's original working directory. Without this the
+          // spawn inherits the viewer's cwd (C:\...\ClaudeSessionsViewer)
+          // which breaks relative-path references inside the session.
+          cwd: session.cwd,
         },
         label,
       });
