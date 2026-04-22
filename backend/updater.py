@@ -215,30 +215,46 @@ _APPLY_LOCK = threading.Lock()
 
 def _windows_swap_script(exe_path: Path, staged_path: Path, pid: int, log_path: Path) -> str:
     """Build the one-shot .cmd that waits for this process to exit, swaps
-    the files, relaunches, and self-deletes. The loop polls `tasklist /FI
-    "PID eq <pid>"` — when the PID no longer matches we can safely rename
-    the locked exe. All output goes to a log next to the exe for postmortem.
+    the files, relaunches, and self-deletes.
+
+    Earlier versions polled `tasklist /FI "PID eq <pid>" | find "<pid>"`,
+    but the `find` exit code is unreliable: on some Windows/cmd builds it
+    returns 0 even when no match is present, pinning the helper in an
+    infinite wait and blocking the swap. Reproduced live during a v0.9.0
+    → v0.9.1 upgrade.
+
+    This version does NOT poll a PID. It instead tries to rename the live
+    exe in a bounded loop — Windows keeps an exclusive lock on a running
+    image file, so `ren` fails with errorlevel != 0 while the process is
+    alive and succeeds the instant it exits. The cap (60 attempts × 1s)
+    prevents the helper from hanging forever if the exit never lands.
+
+    The `pid` is retained only as a log breadcrumb — the loop itself does
+    not depend on it, which is what makes this reliable across cmd
+    versions.
     """
-    # Double the quotes for .cmd literal rendering; no user-controlled
-    # strings enter this template — exe_path/staged_path are Path.resolve()'d
-    # and pid is an int.
+    # exe_path, staged_path come from Path.resolve(); pid is an int.
+    # No user-controlled strings enter this template.
     return (
         f"@echo off\r\n"
         f'set "LOG={log_path}"\r\n'
-        f'echo [%DATE% %TIME%] waiting for pid {pid} to exit >> "%LOG%"\r\n'
+        f'echo [%DATE% %TIME%] waiting for pid {pid} to release its exe lock >> "%LOG%"\r\n'
+        f"set ATTEMPT=0\r\n"
         f":wait\r\n"
-        f'tasklist /FI "PID eq {pid}" 2>nul | find "{pid}" >nul\r\n'
-        f"if %ERRORLEVEL%==0 (\r\n"
-        f"  timeout /T 1 /NOBREAK >nul\r\n"
-        f"  goto wait\r\n"
-        f")\r\n"
-        f'echo [%DATE% %TIME%] pid exited, swapping exe >> "%LOG%"\r\n'
+        # Stage the "live → .old" rename. When the running exe still
+        # holds a lock on the image, ren fails silently (NQ redirect).
         f'if exist "{exe_path}.old" del /F /Q "{exe_path}.old" >nul 2>&1\r\n'
-        f'ren "{exe_path}" "{exe_path.name}.old"\r\n'
-        f"if %ERRORLEVEL% NEQ 0 (\r\n"
-        f'  echo [%DATE% %TIME%] ERROR: rename live exe failed >> "%LOG%"\r\n'
-        f"  exit /B 1\r\n"
+        f'ren "{exe_path}" "{exe_path.name}.old" >nul 2>&1\r\n'
+        f"if %ERRORLEVEL%==0 goto swap\r\n"
+        f"set /A ATTEMPT=ATTEMPT+1\r\n"
+        f"if %ATTEMPT% GEQ 60 (\r\n"
+        f'  echo [%DATE% %TIME%] ERROR: gave up after 60 attempts waiting for exe lock >> "%LOG%"\r\n'
+        f"  exit /B 3\r\n"
         f")\r\n"
+        f"timeout /T 1 /NOBREAK >nul\r\n"
+        f"goto wait\r\n"
+        f":swap\r\n"
+        f'echo [%DATE% %TIME%] exe lock released on attempt %ATTEMPT%, swapping >> "%LOG%"\r\n'
         f'ren "{staged_path}" "{exe_path.name}"\r\n'
         f"if %ERRORLEVEL% NEQ 0 (\r\n"
         f'  echo [%DATE% %TIME%] ERROR: rename staged exe failed, rolling back >> "%LOG%"\r\n'

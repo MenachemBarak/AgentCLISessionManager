@@ -83,13 +83,21 @@ def test_swap_script_structure(app_module, tmp_path):
     staged = tmp_path / "cs-viewer.exe.new"
     log = tmp_path / "swap.log"
     script = updater._windows_swap_script(exe, staged, 12345, log)
-    # Essential invariants: waits for PID, swaps in the right order,
-    # relaunches, self-deletes. A reordering would break the atomic swap.
-    assert "PID eq 12345" in script
-    assert f'ren "{exe}" "{exe.name}.old"' in script
+    # Essential invariants for the rename-attempt swap:
+    # 1. pid is in the log line as a breadcrumb only
+    assert "pid 12345" in script
+    # 2. live→.old rename is used as the readiness signal (retries until
+    #    the exe lock clears), NOT `tasklist | find` which is unreliable.
+    assert "tasklist" not in script, "tasklist-based PID polling is known-broken on some cmd versions"
+    assert f'ren "{exe}" "{exe.name}.old" >nul 2>&1' in script
+    # 3. new promotion renames staged → live
     assert f'ren "{staged}" "{exe.name}"' in script
+    # 4. bounded retry so a stuck shutdown can't hang the user forever
+    assert "ATTEMPT" in script
+    assert "GEQ 60" in script, "must cap the retry loop"
+    # 5. relaunch + self-delete
     assert f'start "" "{exe}"' in script
     assert 'del "%~f0"' in script
-    # Rollback branch present — if the second rename fails we restore
-    # the original exe so the user isn't left with no app at all.
+    # 6. rollback branch — if the staged rename fails we restore the
+    #    original so the user is never left with no app.
     assert f'ren "{exe}.old" "{exe.name}"' in script

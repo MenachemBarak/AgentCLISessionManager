@@ -6,6 +6,23 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.9.2] — 2026-04-23
+
+### Fixed
+- **Self-update swap helper hung indefinitely.** The helper's PID-wait
+  loop used `tasklist /FI "PID eq <pid>" | find "<pid>"` and trusted
+  `%ERRORLEVEL%`. On some Windows / cmd builds `find` returns 0 even
+  when the search string isn't present in its input, so the loop
+  treated an exited PID as still-running and never progressed to the
+  rename. Reproduced live during a v0.9.0 → v0.9.1 upgrade — the app
+  had exited cleanly but the helper sat in the wait loop forever,
+  leaving the user with a staged `.new` that never got promoted.
+  Replaced with a rename-attempt loop: Windows holds an exclusive
+  lock on a running image file, so `ren live → live.old` fails while
+  the exe is alive and succeeds the moment it exits. No tasklist, no
+  find, no ERRORLEVEL quirks — plus a 60s cap so a stuck shutdown can
+  never hang the helper forever.
+
 ## [0.9.1] — 2026-04-22
 
 ### Fixed
