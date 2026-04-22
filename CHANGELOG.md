@@ -6,6 +6,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.9.3] — 2026-04-23
+
+### Changed
+- **`--dangerously-skip-permissions` now included on every resume.** Every
+  `claude --resume <uuid>` spawned by the viewer — the "In viewer"
+  PTY path, the external `wt.exe` tab launcher, and the upcoming
+  restart-ping flow — now passes the flag so the agent doesn't stall
+  on a confirmation prompt when the user isn't there to click OK.
+  The viewer is a local-user tool running the user's own agents on
+  the user's own machine, so skipping permission prompts is the
+  correct default for this context. All three resume paths funnel
+  through `ClaudeCodeProvider.resume_command()` — single source of
+  truth. Security note: do not repurpose this provider method for a
+  multi-tenant or remote-operator context without revisiting the
+  default.
+
 ## [0.9.2] — 2026-04-23
 
 ### Fixed

@@ -96,12 +96,22 @@ def test_preview_and_transcript(app_module) -> None:
 
 
 def test_resume_command_is_stable() -> None:
-    """PR #6 wires this directly into an internal PTY spawn — the shape
-    must stay `argv` (list[str]), never a shell string."""
-    cmd = ClaudeCodeProvider().resume_command("11111111-1111-4111-8111-111111111111")
+    """Wired directly into an internal PTY spawn — shape must stay
+    `argv` (list[str]), never a shell string. All resume paths funnel
+    through this method, so these invariants are load-bearing.
+    """
+    sid = "11111111-1111-4111-8111-111111111111"
+    cmd = ClaudeCodeProvider().resume_command(sid)
+    # argv[0] is always the `claude` binary
     assert cmd[0] == "claude"
-    assert "--resume" in cmd
-    assert cmd[-1] == "11111111-1111-4111-8111-111111111111"
+    # --resume <sid> is always the tail pair (consumed by Claude Code
+    # positionally-after-flag)
+    assert cmd[-2:] == ["--resume", sid]
+    # --dangerously-skip-permissions is ALWAYS present. Unattended resume
+    # flows (restart ping, auto-resume on update) can't tolerate a
+    # permission prompt, and the viewer is a local-user tool so the flag
+    # is the correct default. Regressing this is a user-visible bug.
+    assert "--dangerously-skip-permissions" in cmd
 
 
 # ─────────────────────── endpoint integration ────────────────────────
