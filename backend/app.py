@@ -515,6 +515,25 @@ def update_download() -> dict[str, Any]:
     return updater.download_and_stage()
 
 
+@app.post("/api/update/apply")
+def update_apply() -> dict[str, Any]:
+    """Launch the Windows swap helper, then schedule our own exit.
+
+    The helper script waits for this PID to exit before renaming the
+    locked exe, so we must actually leave — otherwise it spins forever.
+    We give the HTTP response ~0.8s to reach the browser before os._exit.
+    """
+    result = updater.apply_update()
+    if result.get("ok"):
+
+        def _suicide() -> None:
+            time.sleep(0.8)
+            os._exit(0)
+
+        threading.Thread(target=_suicide, name="cs-update-exit", daemon=True).start()
+    return dict(result)
+
+
 @app.get("/api/sessions")
 def list_sessions(limit: int = 1000, offset: int = 0) -> dict[str, Any]:
     if not _INDEX_BUILT:

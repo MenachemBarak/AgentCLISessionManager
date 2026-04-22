@@ -6,6 +6,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.9.0] — 2026-04-22
+
+### Added
+- **Self-update UI — one-click Download + Restart.** The title bar now shows
+  an amber banner when `/api/update-status` reports a newer release. Clicking
+  **Download** fetches the new `.exe` next to the running one and verifies
+  its SHA-256 against the GitHub Releases asset digest. Clicking **Restart &
+  apply** launches a detached Windows `.cmd` helper that waits for this
+  process to exit, renames the live exe to `<name>.old`, promotes `<name>.new`
+  to the live path, relaunches the app, and self-deletes. Rollback on rename
+  failure is automatic; the helper logs every step to `update-swap.log` next
+  to the exe so postmortems survive a botched swap. Dev-mode (`python -m
+  backend.cli`) returns a friendly "not available in dev" from `/api/update/apply`.
+
 ## [0.8.1] — 2026-04-22
 
 ### Fixed

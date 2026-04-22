@@ -98,10 +98,124 @@ function WindowChrome({ children, tweaks, onToggleTweaks, selectedCount, activeC
         </button>
       </div>
 
+      <UpdateBanner accent={ACCENTS[tweaks.accent]}/>
+
       {/* Body: two-pane */}
       <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
         {children}
       </div>
+    </div>
+  );
+}
+
+function UpdateBanner({ accent }) {
+  // Surfaces the self-update state the backend tracks at /api/update-status.
+  // Phases — idle (hidden) | available | downloading | staged | applying | error.
+  // Polls on mount + every 5 min (cheap: just reads in-memory state, no HTTP
+  // out to github). Phase transitions drive button copy + progress bar.
+  const [st, setSt] = React.useState(null);
+  const [busy, setBusy] = React.useState(null); // 'download' | 'apply' | null
+  const [localErr, setLocalErr] = React.useState(null);
+
+  const refresh = React.useCallback(async () => {
+    try {
+      const r = await fetch('/api/update-status');
+      if (r.ok) setSt(await r.json());
+    } catch {}
+  }, []);
+
+  React.useEffect(() => {
+    refresh();
+    const id = setInterval(refresh, 5 * 60 * 1000);
+    return () => clearInterval(id);
+  }, [refresh]);
+
+  // While a download is in flight, poll faster so the progress bar moves.
+  React.useEffect(() => {
+    if (busy !== 'download') return;
+    const id = setInterval(refresh, 500);
+    return () => clearInterval(id);
+  }, [busy, refresh]);
+
+  if (!st || !st.checked) return null;
+  if (!st.updateAvailable && !st.staged && !localErr) return null;
+
+  const onDownload = async () => {
+    setBusy('download'); setLocalErr(null);
+    try {
+      const r = await fetch('/api/update/download', { method: 'POST' });
+      const j = await r.json();
+      if (!j.ok) setLocalErr(j.message || 'download failed');
+    } catch (e) {
+      setLocalErr(String(e));
+    } finally {
+      setBusy(null);
+      refresh();
+    }
+  };
+
+  const onApply = async () => {
+    if (!confirm('Restart the app now to apply the update?')) return;
+    setBusy('apply'); setLocalErr(null);
+    try {
+      const r = await fetch('/api/update/apply', { method: 'POST' });
+      const j = await r.json();
+      if (!j.ok) { setLocalErr(j.message || 'apply failed'); setBusy(null); return; }
+      // The server will exit ~800ms after responding. Show a full-screen
+      // curtain so the user sees *something* while the swap script runs.
+      setTimeout(() => window.location.reload(), 6000);
+    } catch (e) {
+      setLocalErr(String(e));
+      setBusy(null);
+    }
+  };
+
+  const msg = localErr || st.error;
+  const progress = st.downloadProgress || 0;
+
+  return (
+    <div style={{
+      flexShrink: 0,
+      padding: '7px 14px',
+      display: 'flex', alignItems: 'center', gap: 10,
+      background: 'rgba(255,200,80,0.08)',
+      borderBottom: '1px solid rgba(255,200,80,0.18)',
+      fontSize: 12, color: 'rgba(255,255,255,0.85)',
+    }}>
+      <span style={{ width: 8, height: 8, borderRadius: '50%', background: accent, boxShadow: `0 0 6px ${accent}` }}/>
+      <span>
+        {st.staged
+          ? <><b>Update ready</b> — v{st.latestVersion} downloaded. Restart to apply.</>
+          : busy === 'download'
+            ? <><b>Downloading</b> v{st.latestVersion}… {progress}%</>
+            : busy === 'apply'
+              ? <><b>Restarting</b> to v{st.latestVersion}…</>
+              : <><b>Update available</b>: v{st.latestVersion} (current v{st.currentVersion})</>}
+      </span>
+      {busy === 'download' && (
+        <span style={{ flex: 1, height: 4, background: 'rgba(255,255,255,0.08)', borderRadius: 2, overflow: 'hidden' }}>
+          <span style={{ display: 'block', width: `${progress}%`, height: '100%', background: accent, transition: 'width 0.3s' }}/>
+        </span>
+      )}
+      {!busy && !st.staged && (
+        <button onClick={onDownload} style={{
+          marginLeft: 'auto',
+          background: accent, border: 'none', borderRadius: 4,
+          padding: '4px 10px', fontSize: 11, fontWeight: 600,
+          color: '#000', cursor: 'pointer',
+        }}>Download</button>
+      )}
+      {!busy && st.staged && (
+        <button onClick={onApply} style={{
+          marginLeft: 'auto',
+          background: accent, border: 'none', borderRadius: 4,
+          padding: '4px 10px', fontSize: 11, fontWeight: 600,
+          color: '#000', cursor: 'pointer',
+        }}>Restart &amp; apply</button>
+      )}
+      {msg && (
+        <span style={{ color: '#e47a6b', fontSize: 11, marginLeft: 8 }}>{msg}</span>
+      )}
     </div>
   );
 }

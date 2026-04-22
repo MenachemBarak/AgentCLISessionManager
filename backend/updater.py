@@ -22,7 +22,10 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
+import subprocess
 import sys
+import tempfile
 import threading
 import urllib.request
 from pathlib import Path
@@ -205,6 +208,104 @@ def download_and_stage() -> dict[str, str | bool]:
     # future installer-helper) to swap on next launch. Simpler + safer.
     log.info("update staged at %s", stage_path)
     return {"ok": True, "message": "update downloaded; restart to apply", "restartNeeded": True}
+
+
+_APPLY_LOCK = threading.Lock()
+
+
+def _windows_swap_script(exe_path: Path, staged_path: Path, pid: int, log_path: Path) -> str:
+    """Build the one-shot .cmd that waits for this process to exit, swaps
+    the files, relaunches, and self-deletes. The loop polls `tasklist /FI
+    "PID eq <pid>"` — when the PID no longer matches we can safely rename
+    the locked exe. All output goes to a log next to the exe for postmortem.
+    """
+    # Double the quotes for .cmd literal rendering; no user-controlled
+    # strings enter this template — exe_path/staged_path are Path.resolve()'d
+    # and pid is an int.
+    return (
+        f"@echo off\r\n"
+        f'set "LOG={log_path}"\r\n'
+        f'echo [%DATE% %TIME%] waiting for pid {pid} to exit >> "%LOG%"\r\n'
+        f":wait\r\n"
+        f'tasklist /FI "PID eq {pid}" 2>nul | find "{pid}" >nul\r\n'
+        f"if %ERRORLEVEL%==0 (\r\n"
+        f"  timeout /T 1 /NOBREAK >nul\r\n"
+        f"  goto wait\r\n"
+        f")\r\n"
+        f'echo [%DATE% %TIME%] pid exited, swapping exe >> "%LOG%"\r\n'
+        f'if exist "{exe_path}.old" del /F /Q "{exe_path}.old" >nul 2>&1\r\n'
+        f'ren "{exe_path}" "{exe_path.name}.old"\r\n'
+        f"if %ERRORLEVEL% NEQ 0 (\r\n"
+        f'  echo [%DATE% %TIME%] ERROR: rename live exe failed >> "%LOG%"\r\n'
+        f"  exit /B 1\r\n"
+        f")\r\n"
+        f'ren "{staged_path}" "{exe_path.name}"\r\n'
+        f"if %ERRORLEVEL% NEQ 0 (\r\n"
+        f'  echo [%DATE% %TIME%] ERROR: rename staged exe failed, rolling back >> "%LOG%"\r\n'
+        f'  ren "{exe_path}.old" "{exe_path.name}"\r\n'
+        f"  exit /B 2\r\n"
+        f")\r\n"
+        f'echo [%DATE% %TIME%] relaunching >> "%LOG%"\r\n'
+        f'start "" "{exe_path}"\r\n'
+        f'(goto) 2>nul & del "%~f0"\r\n'
+    )
+
+
+def apply_update() -> dict[str, str | bool | int]:
+    """Spawn the swap helper and return; the helper waits for us to exit.
+
+    The caller (usually `POST /api/update/apply`) should schedule a
+    graceful shutdown ~1s after this returns so the helper's
+    `tasklist` loop transitions and the swap + relaunch proceeds.
+
+    Only works on Windows + frozen exe + a staged `.new` sibling.
+    """
+    # platform.system() is a runtime call — mypy won't narrow based on the
+    # test runner's OS and flag the second guard as unreachable.
+    import platform as _platform
+
+    if _platform.system() != "Windows":
+        return {"ok": False, "message": "apply is Windows-only for now"}
+    if not getattr(sys, "frozen", False):
+        return {"ok": False, "message": "self-apply only available in the packaged .exe"}
+
+    with STATE.lock:
+        staged = STATE.staged_path
+    if not staged or not Path(staged).exists():
+        return {"ok": False, "message": "no staged update; call /api/update/download first"}
+
+    with _APPLY_LOCK:
+        exe_path = Path(sys.executable).resolve()
+        staged_path = Path(staged).resolve()
+        pid = os.getpid()
+        log_path = exe_path.parent / "update-swap.log"
+
+        # Write the helper to a temp dir we own; it self-deletes after the swap.
+        script_dir = Path(tempfile.gettempdir()) / "claude-sessions-viewer"
+        script_dir.mkdir(parents=True, exist_ok=True)
+        script_path = script_dir / f"update-swap-{pid}.cmd"
+        script_path.write_text(
+            _windows_swap_script(exe_path, staged_path, pid, log_path),
+            encoding="ascii",
+        )
+
+        # Spawn detached (no console window, no parent handle).
+        # CREATE_NO_WINDOW | DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP.
+        creationflags = 0x08000000 | 0x00000008 | 0x00000200
+        subprocess.Popen(
+            ["cmd.exe", "/c", str(script_path)],
+            creationflags=creationflags,
+            close_fds=True,
+            cwd=str(script_dir),
+        )
+        log.info("update-apply: helper script spawned at %s", script_path)
+        return {
+            "ok": True,
+            "message": "swap helper launched; server will exit shortly",
+            "scriptPath": str(script_path),
+            "logPath": str(log_path),
+            "pid": pid,
+        }
 
 
 def remove_stale_old_file() -> None:
