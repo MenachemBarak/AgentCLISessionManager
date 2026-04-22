@@ -98,6 +98,9 @@ jobs:
         shell: pwsh
         env:
           CSV_TEST_MODE: "1"
+          # Same fixture tree the dev-server job uses — guarantees the
+          # session list has rows so boot-smoke-test's waitReady resolves.
+          CLAUDE_HOME: ${{ github.workspace }}\tests\fixtures\claude-home
         run: |
           Start-Process -FilePath .\dist\csv-e2e.exe `
             -ArgumentList '--server-only','--port','8769','--no-browser' `

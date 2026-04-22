@@ -10,12 +10,14 @@ export class SessionList {
   constructor(private readonly page: Page) {}
 
   async waitReady(): Promise<void> {
-    // The list fetches /api/sessions on mount. We wait for either a row
-    // to appear or the empty-state text to settle before probing further.
+    // The list fetches /api/sessions on mount. We wait for either a
+    // session row or the list status pill (FOLDERS count / ACTIVE count)
+    // to settle — both are rendered once the fetch resolves. A raw row
+    // check alone would hang in environments with zero sessions.
     await this.page.waitForFunction(
       () =>
         document.querySelectorAll('[data-testid^="session-row-"]').length > 0 ||
-        !!document.querySelector('[data-testid="session-empty-state"]'),
+        /FOLDERS|ACTIVE|no sessions/i.test(document.body.innerText),
       null,
       { timeout: 10_000 },
     );

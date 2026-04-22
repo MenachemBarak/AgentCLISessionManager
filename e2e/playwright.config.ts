@@ -1,4 +1,5 @@
 import { defineConfig, devices } from '@playwright/test';
+import * as path from 'path';
 
 // The tests point at a server that the runner starts via `webServer` below.
 // CSV_APP_URL lets CI override to an already-running instance (e.g. the built
@@ -34,8 +35,10 @@ export default defineConfig({
         cwd: '..',
         env: {
           CSV_TEST_MODE: '1',
-          // Use a hermetic home so tests don't race against the user's real sessions.
-          // Set via CLAUDE_HOME in the individual test env when a clean tree is needed.
+          // Point at the repo's fixture tree — guarantees the session list
+          // has rows to render in CI (user HOME is empty on runners). The
+          // backend's conftest uses the same directory.
+          CLAUDE_HOME: path.resolve(__dirname, '..', 'tests', 'fixtures', 'claude-home'),
           PYTHONIOENCODING: 'utf-8',
         },
       },
