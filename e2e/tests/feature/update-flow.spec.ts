@@ -65,14 +65,20 @@ test.describe('self-update banner', () => {
     await expect(page.getByRole('button', { name: /Restart.*apply/i })).toBeVisible();
   });
 
-  test('apply endpoint refuses gracefully in dev mode (no crash)', async ({ page }) => {
-    // In dev (python -m backend.cli) sys.frozen is False → apply returns
-    // {ok:false, message: "...packaged .exe"}. The UI must stay alive.
+  test('apply endpoint refuses gracefully when nothing is staged (no crash)', async ({ page }) => {
+    // Apply has three stacked guards:
+    //   1. non-Windows  → "apply is Windows-only for now"
+    //   2. !sys.frozen  → "self-apply only available in the packaged .exe"
+    //   3. no staged    → "no staged update; call /api/update/download first"
+    // Which branch fires depends on where the tests run (dev server vs
+    // built exe). All three are graceful refusals that must leave
+    // {ok:false} and not crash the UI — we accept any of them.
     const r = await page.request.post('/api/update/apply');
     expect(r.status()).toBe(200);
     const body = await r.json();
     expect(body.ok).toBe(false);
-    expect(body.message.toLowerCase()).toMatch(/windows|packaged/);
+    expect(body.message.toLowerCase(), `unexpected apply message: ${body.message}`)
+      .toMatch(/windows|packaged|staged/);
 
     // Navigate and confirm nothing blew up after the call.
     await page.goto('/');
