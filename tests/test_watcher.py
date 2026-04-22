@@ -245,15 +245,15 @@ def test_live_watchdog_creates_and_deletes_a_session(live_home):
         encoding="utf-8",
     )
 
-    assert _wait_until(lambda: sid in live._INDEX), (
-        f"watchdog should have added {sid} to _INDEX; current keys: {list(live._INDEX)}"
-    )
+    assert _wait_until(
+        lambda: sid in live._INDEX
+    ), f"watchdog should have added {sid} to _INDEX; current keys: {list(live._INDEX)}"
 
     # Now delete and confirm eviction
     session_path.unlink()
-    assert _wait_until(lambda: sid not in live._INDEX), (
-        f"watchdog should have evicted {sid} from _INDEX; current keys: {list(live._INDEX)}"
-    )
+    assert _wait_until(
+        lambda: sid not in live._INDEX
+    ), f"watchdog should have evicted {sid} from _INDEX; current keys: {list(live._INDEX)}"
 
 
 def test_live_watchdog_deletes_via_endpoint(live_home):
