@@ -405,6 +405,28 @@ function App() {
 //   Alt+Shift+V         split focused pane vertically   (new pane below)
 //   Alt+Shift+X         close focused pane
 let _terminalSeq = 0;
+
+// Walk a restored layout's terminal list and collect every sessionId found
+// in any leaf pane's `spawn`. Used by the restart-ping flow to know which
+// sessions were resumed before the last shutdown. Handles nested splits
+// recursively. Skips ad-hoc shell panes (spawn.cmd but no sessionId).
+function collectSessionIds(terminals) {
+  const out = new Set();
+  function walk(node) {
+    if (!node) return;
+    if (node.kind === 'pane' || (!node.kind && node.spawn)) {
+      const sid = node.spawn?.sessionId;
+      if (sid) out.add(sid);
+      return;
+    }
+    if (node.kind === 'split' && Array.isArray(node.children)) {
+      for (const c of node.children) walk(c);
+    }
+  }
+  for (const tab of terminals) walk(tab.tree);
+  return out;
+}
+
 function RightPane({ selected, accent, onOpen }) {
   // terminals[].tree  is the tile tree for that tab (built via
   // window.splits.makePane / splitNode / closeNode).
@@ -436,6 +458,15 @@ function RightPane({ selected, accent, onOpen }) {
             return isFinite(n) && n > m ? n : m;
           }, 0);
           _terminalSeq = Math.max(_terminalSeq, maxSeq);
+          // Seed the restart-ping pending set — any restored tab whose
+          // tree holds a pane with a sessionId should get the
+          // "SOFTWARE RESTARTED" nudge once its PTY is ready. Scope is
+          // strictly "restored from persisted layout on this boot" so
+          // later "In viewer" clicks don't re-ping.
+          const sids = collectSessionIds(state.terminals);
+          if (!window._restartPingPending) window._restartPingPending = new Set();
+          if (!window._restartPingFired) window._restartPingFired = new Set();
+          for (const sid of sids) window._restartPingPending.add(sid);
           setTerminals(state.terminals);
           if (state.activeId) setActiveId(state.activeId);
           if (state.focusedPaneId) setFocusedPaneId(state.focusedPaneId);

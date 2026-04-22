@@ -22,6 +22,23 @@ function ptyWsUrl() {
   return `${proto}//${window.location.host}/api/pty/ws`;
 }
 
+// Restart-ping state (module-level so it survives across pane mounts within
+// the same app boot but resets on a page reload, which is exactly what we
+// want — each viewer boot pings every restored session at most once).
+//   window._restartPingPending: Set<sessionId> — populated during layout
+//     hydration in app.jsx. A session is in this set only if the tab was
+//     restored from persisted layout (not freshly opened by the user).
+//   window._restartPingFired: Set<sessionId> — tracks which sessions were
+//     already pinged this boot, so a split pane with the same session
+//     can't trigger a double-ping.
+// `null` means uninitialized — layout hydration populates the set to
+// either a Set with ids or an empty Set.
+window._restartPingPending = window._restartPingPending ?? new Set();
+window._restartPingFired = window._restartPingFired ?? new Set();
+
+const RESTART_PING_TEXT = 'SOFTWARE RESTARTED - GO ON FROM WHERE YOU LEFT OFF';
+const RESTART_PING_DELAY_MS = 5000;  // wait for claude --resume prompt
+
 function TerminalPane({ spawn, onExit, onReady, className }) {
   // `spawn` — object passed as the first WS frame. Shape:
   //   { cmd: ["cmd.exe"] }                // ad-hoc shell
@@ -100,10 +117,33 @@ function TerminalPane({ spawn, onExit, onReady, className }) {
       catch { console.warn('[pty] non-JSON frame', ev.data); return; }
       console.log('[pty] ← ', msg.type, msg);
       switch (msg.type) {
-        case 'ready':
+        case 'ready': {
           setStatus('ready');
           onReady && onReady(msg.id);
+          // Restart-ping: if this PTY is the resume for a session that was
+          // restored from persisted layout (i.e. the viewer just booted),
+          // and we haven't pinged that session yet this boot, write the
+          // "SOFTWARE RESTARTED" message after a short delay so claude
+          // --resume has time to finish its startup handshake and show the
+          // prompt. The delay is a heuristic — prompt-idle detection would
+          // be more robust but adds substantial complexity for marginal
+          // gain.
+          const sid = spawn?.sessionId;
+          if (
+            sid
+            && window._restartPingPending.has(sid)
+            && !window._restartPingFired.has(sid)
+          ) {
+            window._restartPingFired.add(sid);
+            window._restartPingPending.delete(sid);
+            setTimeout(() => {
+              if (disposedRef.current) return;
+              if (!ws || ws.readyState !== WebSocket.OPEN) return;
+              send({ type: 'input', data: RESTART_PING_TEXT + '\r' });
+            }, RESTART_PING_DELAY_MS);
+          }
           break;
+        }
         case 'output':
           term.write(msg.data || '');
           break;

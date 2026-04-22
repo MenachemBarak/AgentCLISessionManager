@@ -11,6 +11,7 @@ export default defineConfig({
   timeout: 30_000,
   expect: { timeout: 5_000 },
   fullyParallel: false, // the app is stateful (one server), parallel writes would corrupt layout
+  workers: 1,           // hard limit — we share one backend, cannot parallelize file-level either
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? [['list'], ['html', { open: 'never' }]] : 'list',
