@@ -87,24 +87,32 @@ jobs:
           pip install pyinstaller==6.11.1
       - name: Build exe
         run: pyinstaller pyinstaller.spec --noconfirm --clean
-      - name: Rename exe with version
+      - name: Rename exe with version + publish legacy alias
         shell: bash
         run: |
           VER="${{ needs.build.outputs.version }}"
-          mv "dist/claude-sessions-viewer.exe" "dist/claude-sessions-viewer-${VER}-windows-x64.exe"
+          # PyInstaller produced dist/AgentManager.exe (spec `name` was
+          # changed in v1.0.0 as part of the rebrand). We publish under
+          # the new versioned name AND copy to the legacy name so
+          # clients on v0.9.x (whose updater looks for
+          # `claude-sessions-viewer-<ver>-windows-x64.exe`) continue to
+          # see the update banner and can upgrade into v1.0.0+.
+          mv "dist/AgentManager.exe" "dist/AgentManager-${VER}-windows-x64.exe"
+          cp "dist/AgentManager-${VER}-windows-x64.exe" \
+             "dist/claude-sessions-viewer-${VER}-windows-x64.exe"
           ls -la dist/
       - name: Smoke-test exe boots
         shell: bash
         run: |
           VER="${{ needs.build.outputs.version }}"
-          EXE="dist/claude-sessions-viewer-${VER}-windows-x64.exe"
+          EXE="dist/AgentManager-${VER}-windows-x64.exe"
           "$EXE" --version
-          "$EXE" --version | grep -qE "claude-sessions-viewer ${VER}$"
+          "$EXE" --version | grep -qE "AgentManager ${VER}$"
       - name: Smoke-test exe serves API (server-only mode)
         shell: bash
         run: |
           VER="${{ needs.build.outputs.version }}"
-          EXE="dist/claude-sessions-viewer-${VER}-windows-x64.exe"
+          EXE="dist/AgentManager-${VER}-windows-x64.exe"
           export CLAUDE_HOME="$PWD/tests/fixtures/claude-home"
           "$EXE" --server-only --no-browser --port 8799 --log-level warning &
           SERVER_PID=$!
@@ -122,7 +130,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: windows-exe
-          path: dist/claude-sessions-viewer-*-windows-x64.exe
+          path: |
+            dist/AgentManager-*-windows-x64.exe
+            dist/claude-sessions-viewer-*-windows-x64.exe
 
   verify:
     name: Verify built wheel installs and runs
@@ -223,4 +233,5 @@ jobs:
             dist/claude_sessions_viewer-*.whl \
             dist/claude_sessions_viewer-*.tar.gz \
             dist/claude-sessions-viewer-*-windows.zip \
+            dist/AgentManager-*-windows-x64.exe \
             dist/claude-sessions-viewer-*-windows-x64.exe

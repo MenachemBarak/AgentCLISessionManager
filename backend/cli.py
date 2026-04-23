@@ -76,7 +76,7 @@ def _run_server(host: str, port: int, log_level: str) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        prog="claude-sessions-viewer",
+        prog="AgentManager",
         description="Desktop app for Claude Code sessions (native webview).",
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
@@ -151,7 +151,7 @@ def main(argv: list[str] | None = None) -> int:
         target=_run_server,
         args=(args.host, port, args.log_level),
         daemon=True,
-        name="claude-sessions-viewer-uvicorn",
+        name="AgentManager-uvicorn",
     )
     server_thread.start()
 

@@ -112,7 +112,7 @@ def _set_user_label(sid: str, label: str | None) -> None:
     _save_labels(d)
 
 
-app = FastAPI(title="Claude Sessions Viewer", version=__version__)
+app = FastAPI(title="AgentManager", version=__version__)
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 

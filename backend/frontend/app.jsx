@@ -67,7 +67,7 @@ function WindowChrome({ children, tweaks, onToggleTweaks, selectedCount, activeC
           <span style={{
             fontSize: 12.5, fontWeight: 600, letterSpacing: 0.2,
             color: 'rgba(255,255,255,0.9)',
-          }}>Session Manager</span>
+          }}>AgentManager</span>
           <span style={{
             fontFamily: 'JetBrains Mono, monospace', fontSize: 10.5,
             color: 'rgba(255,255,255,0.3)',

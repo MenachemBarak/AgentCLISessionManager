@@ -55,7 +55,7 @@ exe = EXE(  # noqa: F821
     a.binaries,
     a.datas,
     [],
-    name="claude-sessions-viewer",
+    name="AgentManager",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
