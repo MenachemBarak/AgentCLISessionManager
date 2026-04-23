@@ -6,6 +6,28 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.9.9] — 2026-04-23
+
+### Added
+- **Move Claude Code sessions between project directories** via two
+  new endpoints:
+  - `POST /api/sessions/{sid}/move/plan` — dry-run, returns a full
+    structured report (target path, encoded dir, SHA of source,
+    warnings for "source was modified recently, may still be
+    streaming", `safe_to_move` flag). NEVER touches the filesystem
+    beyond reading.
+  - `POST /api/sessions/{sid}/move/execute` — requires explicit
+    `confirm=true` in the body (missing flag returns 400, not silent
+    move). Copy-verify-unlink ordering: if the process dies mid-move
+    we are left with either just the source (resumable) or both
+    copies (dedupe by hand), never only a partial destination.
+    Preserves file mtime so activity sorting doesn't spike to the
+    top of the list after a move.
+  Covered by `tests/test_move_session.py` (8 tests — encoding,
+  plan refusal cases, same-dir no-op, copy+verify+unlink round-trip,
+  rollback on plan failure). HIGH-RISK operation, UI dialog will be
+  gated on the plan report's `safe_to_move=True`.
+
 ## [0.9.8] — 2026-04-23
 
 ### Changed
