@@ -79,7 +79,7 @@ jobs:
 
       - name: Rename exe to the expected launcher name
         run: |
-          Move-Item -Force dist\claude-sessions-viewer.exe dist\csv-e2e.exe
+          Move-Item -Force dist\AgentManager.exe dist\csv-e2e.exe
         shell: pwsh
 
       - uses: actions/setup-node@v4

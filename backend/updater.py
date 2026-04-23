@@ -35,7 +35,16 @@ from backend.__version__ import __version__
 log = logging.getLogger(__name__)
 
 RELEASES_API = "https://api.github.com/repos/MenachemBarak/AgentCLISessionManager/releases/latest"
-ASSET_PATTERN = "claude-sessions-viewer-{version}-windows-x64.exe"
+# From v1.0.0 onwards the product is branded "AgentManager". Release
+# workflow publishes BOTH asset names for the transition window so
+# clients on v0.9.x (which look for `claude-sessions-viewer-...`) keep
+# seeing the update banner. Once shipped, this pattern is what v1.0.0+
+# clients will poll for.
+ASSET_PATTERN = "AgentManager-{version}-windows-x64.exe"
+# Fallback for releases that haven't been re-published with the new
+# name yet (in practice only relevant if a user installs v1.0.0 and
+# then downgrades manually). Not used for normal checks.
+LEGACY_ASSET_PATTERN = "claude-sessions-viewer-{version}-windows-x64.exe"
 
 
 class UpdateState:

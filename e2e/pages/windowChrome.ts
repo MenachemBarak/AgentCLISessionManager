@@ -10,11 +10,11 @@ export class WindowChrome {
 
   /** The top bar locator — used by other actions to scope queries. */
   titleBar(): Locator {
-    return this.page.locator('div').filter({ hasText: /^Session Manager/ }).first();
+    return this.page.locator('div').filter({ hasText: /^AgentManager/ }).first();
   }
 
   /**
-   * Read the version label rendered next to "Session Manager". Returns
+   * Read the version label rendered next to "AgentManager". Returns
    * the string (e.g. "v0.9.1") or null if not rendered yet — useful as
    * a signal the frontend has finished its first `/api/status` fetch.
    */

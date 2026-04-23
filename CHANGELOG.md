@@ -6,6 +6,33 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.0.0] — 2026-04-23
+
+### Changed — REBRAND
+- **Product is now "AgentManager"** — the old "Claude Sessions Viewer"
+  / "Session Manager" names are replaced across every user-facing
+  surface:
+  - Title bar reads `AgentManager vX.Y.Z`
+  - FastAPI `title="AgentManager"`
+  - CLI `--version` prints `AgentManager X.Y.Z`
+  - PyInstaller output exe is `AgentManager.exe`
+  - Release assets published as `AgentManager-X.Y.Z-windows-x64.exe`
+- **Upgrade chain preserved for v0.9.x clients** — the release
+  workflow now publishes BOTH assets: the new primary
+  `AgentManager-...` AND a legacy alias `claude-sessions-viewer-...`.
+  v0.9.x updaters (which look for the legacy name) continue to see
+  the banner and can upgrade into v1.0.0 without a manual download.
+- **Installed binary path unchanged** — the swap helper writes into
+  the existing filesystem location (`%LOCALAPPDATA%\Programs\
+  ClaudeSessionsViewer\claude-sessions-viewer.exe`). The content is
+  now AgentManager v1.0.0; only the filesystem name is a legacy
+  artifact. A future release can migrate the path + Desktop
+  shortcut.
+
+### Unchanged
+- Everything that worked in v0.9.10 still works — this is a naming
+  change only, no functional behaviour shifts.
+
 ## [0.9.10] — 2026-04-23
 
 ### Added
