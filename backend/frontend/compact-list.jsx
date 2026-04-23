@@ -14,6 +14,7 @@ function CompactSearch({ value, onChange }) {
     }}>
       <IconSearch size={12} stroke={1.8}/>
       <input value={value} onChange={(e) => onChange(e.target.value)}
+        data-testid="session-search-input"
         placeholder="Search sessions…"
         style={{
           flex: 1, background: 'transparent', border: 'none', outline: 'none',
@@ -271,7 +272,7 @@ function RowTitle({ session, accent }) {
   );
 }
 
-function IconBtn({ label, onClick, Icon }) {
+function IconBtn({ label, onClick, Icon, testid }) {
   const [hover, setHover] = useStateCL(false);
   return (
     <button
@@ -279,6 +280,7 @@ function IconBtn({ label, onClick, Icon }) {
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
       title={label}
+      data-testid={testid || `rowbtn-${String(label || '').toLowerCase().replace(/\s+/g, '-')}`}
       style={{
         display: 'flex', alignItems: 'center', gap: 3,
         padding: '3px 7px',
