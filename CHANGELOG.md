@@ -6,6 +6,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.1.1] — 2026-04-24
+
+### Fixed — persisted session tabs auto-resume on upgrade
+- **Tabs persisted before v1.1.0 now auto-resume after upgrading.** A
+  user who upgraded from v0.9.x / v1.0.x to v1.1.0 saw every session
+  tab render "session exited" on boot instead of resuming — because the
+  old persisted spawn shape `{provider:'claude-code', sessionId}` ran
+  `claude` as argv[0] of the PTY, and in the frozen exe the inherited
+  PATH does not contain `claude.exe`, so pywinpty's spawn failed
+  instantly. v1.1.1 migrates any legacy-shape pane to the v1.1.0
+  shell-wrap shape during rehydrate, then re-persists it so subsequent
+  boots start clean. Fresh installs are unaffected.
+- **TDD guard.** `e2e/tests/feature/legacy-layout-migration.spec.ts`
+  seeds the legacy shape + intercepts the WS spawn frame; the
+  assertion flips red the moment any regression strips the migration.
+
 ## [1.1.0] — 2026-04-23
 
 ### Changed — graceful /exit via shell-wrap
