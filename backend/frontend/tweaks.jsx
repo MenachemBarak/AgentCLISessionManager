@@ -119,6 +119,48 @@ function HookToggle() {
   );
 }
 
+// Segmented — horizontal option group. Each option renders as a flat
+// button; the selected one gets an accent fill. Used by every Tweaks
+// row except the Accent swatches (which are their own color grid).
+//
+// Was referenced by TweaksPanel for months but never defined anywhere,
+// causing `ReferenceError: Segmented is not defined` on every click of
+// the Tweaks button. Caught by e2e/tests/feature/tweaks.spec.ts.
+function Segmented({ value, onChange, options }) {
+  return (
+    <div
+      data-testid="segmented-group"
+      style={{
+        display: 'flex', gap: 0,
+        background: 'rgba(255,255,255,0.04)',
+        border: '1px solid rgba(255,255,255,0.08)',
+        borderRadius: 6, padding: 2,
+      }}>
+      {options.map((o, i) => {
+        const active = o.value === value;
+        return (
+          <button
+            key={o.value}
+            data-testid={`segmented-option-${o.value}`}
+            onClick={() => onChange(o.value)}
+            style={{
+              flex: 1, padding: '5px 8px',
+              background: active ? 'rgba(255,255,255,0.1)' : 'transparent',
+              border: 'none',
+              borderRadius: 4,
+              color: active ? 'rgba(255,255,255,0.95)' : 'rgba(255,255,255,0.55)',
+              fontFamily: 'inherit', fontSize: 11, fontWeight: active ? 600 : 500,
+              cursor: 'pointer',
+              transition: 'background 100ms, color 100ms',
+            }}>
+            {o.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 function TweakGroup({ label, children }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
