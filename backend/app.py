@@ -116,6 +116,39 @@ app = FastAPI(title="AgentManager", version=__version__)
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 
+# ─────────────────────── daemon-mode bearer auth (ADR-18 / Task #42) ─
+# When launched via `python -m daemon`, the entrypoint sets
+# `app.state.require_bearer_token` to the per-install secret read from
+# %LOCALAPPDATA%\AgentManager\token. Every request except a small
+# allowlist must present `Authorization: Bearer <token>` or get 401.
+# In non-daemon mode (legacy dev server / existing PyInstaller exe)
+# `require_bearer_token` stays None → the middleware is a no-op, so
+# callers that haven't opted in see zero behaviour change.
+_AUTH_ALLOWLIST = {
+    "/api/health",  # UI shim probes this BEFORE it has the token
+    "/docs", "/redoc", "/openapi.json",
+}
+
+
+@app.middleware("http")
+async def _bearer_auth(request, call_next):  # type: ignore[no-untyped-def]
+    required = getattr(app.state, "require_bearer_token", None)
+    if not required:
+        return await call_next(request)
+    if request.url.path in _AUTH_ALLOWLIST:
+        return await call_next(request)
+    header = request.headers.get("authorization", "")
+    if not header.lower().startswith("bearer "):
+        from starlette.responses import JSONResponse
+
+        return JSONResponse({"error": "missing bearer token"}, status_code=401)
+    if header[len("bearer "):].strip() != required:
+        from starlette.responses import JSONResponse
+
+        return JSONResponse({"error": "invalid bearer token"}, status_code=401)
+    return await call_next(request)
+
+
 # ─────────────────────── JSONL parsing ───────────────────────
 def _extract_text(content: Any) -> str:
     if isinstance(content, str):
