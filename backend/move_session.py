@@ -116,8 +116,11 @@ def plan_move(
                 "session may still be streaming. Close the running "
                 "`claude` process before moving."
             )
-    except OSError:
-        pass
+    except OSError as e:  # noqa: BLE001 — best-effort age check; age is advisory
+        log_warn = f"could not stat source for age check: {e}"
+        warnings = result.get("warnings")
+        if isinstance(warnings, list):
+            warnings.append(log_warn)
 
     # Compute + validate destination.
     dest_parent = projects_dir / str(result["target_encoded_dir"])
@@ -211,9 +214,12 @@ def execute_move(
 
     if actual != expected_sha:
         # Clean up the bad copy rather than leave a silent duplicate.
+        # If unlink fails the user still has a dedupable duplicate, not
+        # a silent corruption — the caller is about to return ok:False
+        # either way.
         try:
             dest.unlink(missing_ok=True)
-        except OSError:
+        except OSError:  # noqa: S110 — cleanup is best-effort
             pass
         return {
             "ok": False,
