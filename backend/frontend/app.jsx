@@ -85,6 +85,7 @@ function WindowChrome({ children, tweaks, onToggleTweaks, selectedCount, activeC
           <span>{selectedCount} total</span>
         </div>
         <button onClick={onToggleTweaks}
+          data-testid="tweaks-button"
           style={{
             background: 'rgba(255,255,255,0.06)',
             border: '1px solid rgba(255,255,255,0.1)',
@@ -656,7 +657,7 @@ function RightPane({ selected, accent, onOpen }) {
       {/* Body. Transcript + each terminal tab lives in its own div that
           is display:none when inactive — this preserves the xterm
           viewports and their WebSockets across tab switches. */}
-      <div style={{
+      <div data-testid="transcript-pane" style={{
         flex: 1, display: activeId === 'transcript' ? 'flex' : 'none',
         flexDirection: 'column', minHeight: 0,
       }}>
