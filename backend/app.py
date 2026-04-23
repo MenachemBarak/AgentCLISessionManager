@@ -411,6 +411,18 @@ def status() -> dict[str, Any]:
     }
 
 
+@app.get("/api/health")
+def health() -> dict[str, Any]:
+    """Cheap liveness probe used by the UI shim (ADR-18 / Task #42) to
+    decide whether a daemon is already running on port 8765.
+
+    Returns immediately without touching the index — the UI shim may hit
+    this every ~200ms during startup while polling for daemon availability.
+    Keep it free of I/O; `daemonVersion` comes from the in-process constant.
+    """
+    return {"ok": True, "daemonVersion": __version__}
+
+
 @app.get("/api/providers")
 def list_providers() -> dict[str, Any]:
     """List every known agent-CLI provider and whether it's active on this
