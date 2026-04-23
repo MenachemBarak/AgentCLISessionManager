@@ -97,6 +97,21 @@ function CompactRow({ session, accent, selected, onSelect, onOpen, onHover, onLe
   const [hover, setHover] = useStateCL(false);
   const ref = useRefCL(null);
   const sid8 = session.id.slice(0, 8);
+  // When a terminal tab focuses us and `selected` flips on, auto-scroll
+  // into view so the user can see what's been highlighted in a long list.
+  // Uses `block: 'nearest'` to avoid jarring jumps when the row is already
+  // on screen. Guarded by `selected` so clicking other rows doesn't
+  // re-scroll each one individually.
+  React.useEffect(() => {
+    if (!selected || !ref.current) return;
+    try {
+      ref.current.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    } catch {
+      // scrollIntoView options are only partially supported on older
+      // webviews — the plain form still works.
+      try { ref.current.scrollIntoView(); } catch {}
+    }
+  }, [selected]);
   return (
     <div
       ref={ref}

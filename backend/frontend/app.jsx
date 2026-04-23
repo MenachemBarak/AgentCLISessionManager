@@ -381,7 +381,8 @@ function App() {
         recentlyCreated={recentlyCreated}
         onOpen={handleOpen}
         onHover={handleHover} onLeave={handleLeave}/>
-      <RightPane selected={selected} accent={accent} onOpen={handleOpen}/>
+      <RightPane selected={selected} accent={accent} onOpen={handleOpen}
+        onActiveSessionChange={(sid) => { if (sid) setSelectedId(sid); }}/>
       <PreviewPopover session={hovered?.session} anchor={hovered?.anchor}
         accent={accent} mode={tweaks.hoverMode}/>
       <TweaksPanel open={tweaksOpen} tweaks={tweaks} setTweaks={setTweaks}
@@ -428,7 +429,25 @@ function collectSessionIds(terminals) {
   return out;
 }
 
-function RightPane({ selected, accent, onOpen }) {
+// Walk any tile-tree and return the first pane's sessionId, or null if
+// none of its leaves are resumable (all ad-hoc shells, or a malformed
+// tree). Used to mirror "which session is this tab about?" into the
+// left-pane selected row.
+function firstSessionIdInTree(tree) {
+  if (!tree) return null;
+  if (tree.kind === 'pane' || (!tree.kind && tree.spawn)) {
+    return tree.spawn?.sessionId || null;
+  }
+  if (tree.kind === 'split' && Array.isArray(tree.children)) {
+    for (const c of tree.children) {
+      const sid = firstSessionIdInTree(c);
+      if (sid) return sid;
+    }
+  }
+  return null;
+}
+
+function RightPane({ selected, accent, onOpen, onActiveSessionChange }) {
   // terminals[].tree  is the tile tree for that tab (built via
   // window.splits.makePane / splitNode / closeNode).
   const [terminals, setTerminals] = React.useState([]);
@@ -477,6 +496,21 @@ function RightPane({ selected, accent, onOpen }) {
     })();
     return () => { cancelled = true; };
   }, []);
+
+  // Mirror the active terminal tab's sessionId into the left-pane
+  // selection. When the user clicks a terminal tab that holds a
+  // `claude --resume <sid>` pane, the matching row in the session list
+  // should highlight (and its transcript load in the Transcript tab).
+  // Fires only when activeId points at a tab whose first leaf has a
+  // sessionId — ad-hoc shell tabs don't move the selection.
+  React.useEffect(() => {
+    if (!onActiveSessionChange) return;
+    if (activeId === 'transcript') return;
+    const tab = terminals.find((t) => t.id === activeId);
+    if (!tab) return;
+    const sid = firstSessionIdInTree(tab.tree);
+    if (sid) onActiveSessionChange(sid);
+  }, [activeId, terminals, onActiveSessionChange]);
 
   // Debounced persist: every mutation to the layout state writes a tiny
   // JSON blob to ~/.claude/viewer-terminal-state.json. 400 ms debounce is

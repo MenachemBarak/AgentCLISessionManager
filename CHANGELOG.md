@@ -6,6 +6,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.9.5] — 2026-04-23
+
+### Added
+- **Terminal tab focus now highlights the matching session row.** Clicking
+  into a terminal tab that holds a resumable session auto-selects the
+  corresponding row in the left pane (loads its transcript + brings the
+  row on-screen via `scrollIntoView({block:'nearest'})`). Works across
+  all resume paths — "In viewer" click, external wt.exe resume, or
+  layout-state rehydration on restart. Ad-hoc shell tabs don't move the
+  selection. Covered by `e2e/tests/feature/tab-focus-highlights.spec.ts`
+  (3 tests).
+
 ## [0.9.4] — 2026-04-23
 
 ### Added
