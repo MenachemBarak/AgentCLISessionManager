@@ -6,6 +6,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.9.7] — 2026-04-23
+
+### Added
+- **Update banner now appears automatically** without needing an app
+  restart. Two new layers of polling close the gap that left a
+  long-running viewer stuck on whatever release was latest at startup:
+  - Backend `start_periodic_recheck()` daemon — re-runs the GitHub
+    Releases poll every 30 min.
+  - Frontend hourly `POST /api/update/check` from the banner — forces
+    a fresh GitHub fetch even if the backend recheck hasn't fired
+    yet.
+  Worst-case lag between a release dropping and the banner appearing
+  is now ~30 min (was: indefinite, until process restart).
+- **`POST /api/update/check`** endpoint — synchronously re-fetches
+  the latest release info from GitHub and returns the fresh snapshot.
+
 ## [0.9.6] — 2026-04-23
 
 ### Fixed

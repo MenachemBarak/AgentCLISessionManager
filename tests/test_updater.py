@@ -44,6 +44,45 @@ def test_update_status_reflects_seeded_state(client, app_module):
             updater.STATE.latest_version = prev["latestVersion"]
 
 
+def test_post_update_check_returns_fresh_snapshot(client, app_module, monkeypatch):
+    """`POST /api/update/check` must call check_for_updates synchronously
+    and return the resulting snapshot — not the cached one. We mock the
+    network call so the test is hermetic."""
+    updater = app_module.updater
+    called = {"count": 0}
+
+    def fake_check() -> None:
+        called["count"] += 1
+        with updater.STATE.lock:
+            updater.STATE.checked = True
+            updater.STATE.latest_version = "9.9.9"
+
+    monkeypatch.setattr(updater, "check_for_updates", fake_check)
+
+    r = client.post("/api/update/check")
+    assert r.status_code == 200
+    body = r.json()
+    assert called["count"] == 1, "check_for_updates was not invoked"
+    assert body["latestVersion"] == "9.9.9"
+    assert body["updateAvailable"] is True
+
+
+def test_start_periodic_recheck_is_idempotent(app_module):
+    """Calling start_periodic_recheck twice must not spawn two threads —
+    a daemon double-spawn would burn 2× the GitHub rate limit forever."""
+    updater = app_module.updater
+    # Reset module flag so the test is self-contained.
+    with updater._recheck_lock:
+        updater._recheck_started = False
+    import threading as _t
+
+    before = sum(1 for t in _t.enumerate() if t.name == "cs-updater-recheck")
+    updater.start_periodic_recheck(interval_seconds=3600)
+    updater.start_periodic_recheck(interval_seconds=3600)
+    after = sum(1 for t in _t.enumerate() if t.name == "cs-updater-recheck")
+    assert after - before == 1, f"expected 1 recheck thread spawned, got {after - before}"
+
+
 def test_apply_refuses_in_dev_mode(client, app_module):
     # sys.frozen is False under pytest — apply must refuse rather than
     # spawn a swap helper that would target the python interpreter.

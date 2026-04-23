@@ -125,11 +125,26 @@ function UpdateBanner({ accent }) {
     } catch {}
   }, []);
 
+  // Force a synchronous re-fetch from GitHub. Without this the banner
+  // only saw the cached snapshot from app startup; users who left the
+  // viewer running through several releases never saw the banner.
+  const forceCheck = React.useCallback(async () => {
+    try {
+      const r = await fetch('/api/update/check', { method: 'POST' });
+      if (r.ok) setSt(await r.json());
+    } catch {}
+  }, []);
+
   React.useEffect(() => {
     refresh();
-    const id = setInterval(refresh, 5 * 60 * 1000);
-    return () => clearInterval(id);
-  }, [refresh]);
+    // 5 min: cheap snapshot poll (in-memory state, no HTTP to github).
+    const snap = setInterval(refresh, 5 * 60 * 1000);
+    // 1 h: actual GitHub re-check from the frontend, augments the
+    // backend's 30 min periodic check so the banner never lags more
+    // than ~30 min behind a release drop.
+    const live = setInterval(forceCheck, 60 * 60 * 1000);
+    return () => { clearInterval(snap); clearInterval(live); };
+  }, [refresh, forceCheck]);
 
   // While a download is in flight, poll faster so the progress bar moves.
   React.useEffect(() => {

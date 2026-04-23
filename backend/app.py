@@ -445,6 +445,9 @@ async def _startup() -> None:
     # kick off a non-blocking check for a newer GitHub Release.
     updater.remove_stale_old_file()
     updater.start_background_check()
+    # Plus a periodic re-check so a long-running viewer notices new
+    # releases without a process restart. Fires every 30 min by default.
+    updater.start_periodic_recheck()
 
 
 @app.post("/api/rescan")
@@ -513,6 +516,17 @@ def update_download() -> dict[str, Any]:
     """Fetch the newer exe into a sibling `.new` file. Returns when the
     download completes — the frontend then tells the user to relaunch."""
     return updater.download_and_stage()
+
+
+@app.post("/api/update/check")
+def update_check() -> dict[str, Any]:
+    """Re-fetch the latest release info from GitHub right now.
+
+    Forces a synchronous check that bypasses any cached state. Used by
+    the title-bar refresh button and the banner's hourly re-check, so
+    the user sees newly published releases without restarting the app.
+    """
+    return dict(updater.force_recheck())
 
 
 class _TestSeedReq(BaseModel):

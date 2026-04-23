@@ -124,6 +124,50 @@ def start_background_check() -> None:
     t.start()
 
 
+# Re-check every 30 minutes so a long-running viewer notices new releases
+# without a process restart. Picked 30 min: well under GitHub's anonymous
+# rate limit (60 req/h per IP), well over the user-perceptible refresh
+# window where they'd accept noticing "a release just dropped".
+_RECHECK_INTERVAL_SECONDS = 30 * 60
+_recheck_started = False
+_recheck_lock = threading.Lock()
+
+
+def start_periodic_recheck(interval_seconds: int = _RECHECK_INTERVAL_SECONDS) -> None:
+    """Daemon thread that re-runs check_for_updates() every interval.
+
+    Idempotent — only one recheck thread per process. Safe to call from
+    `cli.py` startup alongside `start_background_check()` (which fires
+    the FIRST check immediately so the banner has data within seconds).
+    """
+    global _recheck_started
+    with _recheck_lock:
+        if _recheck_started:
+            return
+        _recheck_started = True
+
+    def loop() -> None:
+        import time as _time
+
+        while True:
+            _time.sleep(interval_seconds)
+            try:
+                check_for_updates()
+            except Exception:  # noqa: BLE001 — daemon loop must not die
+                log.exception("recheck loop iteration failed; will retry next interval")
+
+    t = threading.Thread(target=loop, name="cs-updater-recheck", daemon=True)
+    t.start()
+
+
+def force_recheck() -> dict[str, str | int | bool | None]:
+    """Synchronous re-fetch from GitHub. Used by `POST /api/update/check`
+    so the user can manually refresh without waiting for the periodic
+    loop. Returns the fresh snapshot."""
+    check_for_updates()
+    return STATE.snapshot()
+
+
 def download_and_stage() -> dict[str, str | bool]:
     """Download the new exe next to the running one as `.new`.
 
