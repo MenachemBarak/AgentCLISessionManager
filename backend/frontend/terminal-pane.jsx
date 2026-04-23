@@ -52,6 +52,24 @@ const RESTART_PING_TEXT =
   + 'ALREADY DID BEFORE THIS SOFTWARE RESTART, PLEASE VALIDATE THAT ALL RUNNING '
   + 'BACKGROUND TASKS, SERVICES AND CRON JOBS ETC ARE PRESERVED JUST AS HOW WE '
   + 'LEFT OF BEFORE THE RESTART';
+
+// Claude Code shows this prompt when you `--resume` a session older than
+// ~some threshold (measured in age + token count): it offers "Resume from
+// summary (recommended)" or "Resume full session as-is" or "Don't ask me
+// again". The default cursor is on option 1 (summary), but for unattended
+// resume we want option 2 — summary-compression hides the context the
+// user has been actively working with. Matching a distinctive fragment
+// of the prompt ensures we don't false-trigger on stray output.
+const RESUME_PROMPT_MARKER = 'Resume full session as-is';
+// Down-arrow + Enter moves from option 1 to option 2 and confirms. Plain
+// "2\r" also works in most Ink-TUI builds, but arrow+enter is the
+// universally-accepted navigation that matches what Claude Code's own
+// docs demonstrate.
+const RESUME_PROMPT_PICK_FULL = '\x1b[B\r';
+// Dedupe across re-renders of the same pane: once a session has been
+// auto-answered this boot, any later output still showing the prompt
+// text (e.g. scrollback) shouldn't re-send.
+if (!window._resumePromptHandled) window._resumePromptHandled = new Set();
 const RESTART_PING_DELAY_MS = 5000;  // wait for claude --resume prompt
 
 function TerminalPane({ spawn, onExit, onReady, className }) {
@@ -159,9 +177,31 @@ function TerminalPane({ spawn, onExit, onReady, className }) {
           }
           break;
         }
-        case 'output':
-          term.write(msg.data || '');
+        case 'output': {
+          const data = msg.data || '';
+          term.write(data);
+          // Auto-select "Resume full session as-is" if Claude Code asks.
+          // Default cursor is on option 1 (summary); we send down-arrow +
+          // Enter to pick option 2. Deduped per sessionId per viewer boot.
+          const sid = spawn?.sessionId;
+          if (
+            sid
+            && typeof data === 'string'
+            && data.includes(RESUME_PROMPT_MARKER)
+            && !window._resumePromptHandled.has(sid)
+          ) {
+            window._resumePromptHandled.add(sid);
+            // Small delay so the prompt is fully rendered before we
+            // answer — firing input before Ink finishes laying out the
+            // options can be dropped.
+            setTimeout(() => {
+              if (disposedRef.current) return;
+              if (!ws || ws.readyState !== WebSocket.OPEN) return;
+              send({ type: 'input', data: RESUME_PROMPT_PICK_FULL });
+            }, 400);
+          }
           break;
+        }
         case 'exit':
           setStatus('exited');
           onExit && onExit(msg.code);
