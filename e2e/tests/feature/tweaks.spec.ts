@@ -14,11 +14,7 @@ test.describe('tweaks drawer', () => {
     await expect.poll(() => tw.isAvailable(), { timeout: 5_000 }).toBe(true);
   });
 
-  // Known bug: TweaksPanel references `<Segmented>` which isn't defined
-  // anywhere and isn't registered on `window`. Clicking the button
-  // triggers a ReferenceError inside React's render, which React
-  // recovers from but logs as a pageerror. Un-fixme when task #43 lands.
-  test.fixme('clicking the button does not crash the app', async ({ page }) => {
+  test('clicking the button does not crash the app', async ({ page }) => {
     await page.goto('/');
     const tw = new Tweaks(page);
 
@@ -38,6 +34,28 @@ test.describe('tweaks drawer', () => {
     // this build.
     expect(pageErrors, `tweaks toggle produced page errors:\n${pageErrors.map((e) => e.stack).join('\n')}`).toHaveLength(0);
     await expect(page.getByTestId('tweaks-button')).toBeVisible();
+  });
+
+  test('Segmented buttons render inside the drawer + selection changes persist', async ({ page }) => {
+    await page.goto('/');
+    const tw = new Tweaks(page);
+    await tw.toggle();
+    await page.waitForTimeout(300);
+
+    // Drawer mounts with at least one Segmented group (Theme / Density /
+    // Hover preview / Live activity — four groups in total).
+    const groupCount = await page.getByTestId('segmented-group').count();
+    expect(groupCount, 'tweaks drawer should render ≥1 Segmented group').toBeGreaterThan(0);
+
+    // Picking a theme option updates cm_tweaks.theme — round-trip
+    // proof that Segmented → onChange → setTweaks → localStorage works.
+    const before = await tw.readPersisted();
+    const beforeTheme = (before as Record<string, unknown> | null)?.theme;
+    const target = beforeTheme === 'warm' ? 'dark' : 'warm';
+    await page.getByTestId(`segmented-option-${target}`).first().click();
+    await page.waitForTimeout(200);
+    const after = await tw.readPersisted();
+    expect((after as Record<string, unknown> | null)?.theme).toBe(target);
   });
 
   test('tweaks persist to localStorage under cm_tweaks', async ({ page }) => {

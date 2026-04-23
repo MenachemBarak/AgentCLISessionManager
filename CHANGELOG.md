@@ -6,6 +6,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.9.6] — 2026-04-23
+
+### Fixed
+- **Tweaks drawer no longer crashes on open.** `TweaksPanel` referenced
+  `<Segmented>` in four spots but the component was never defined
+  anywhere or registered on `window`. Clicking the Tweaks button in
+  the title bar threw `ReferenceError: Segmented is not defined`
+  inside React's render; the drawer silently failed to appear.
+  Defined `Segmented` — a horizontal button group with per-option
+  testid (`segmented-option-<value>`) — and the four Tweaks rows
+  (Theme / Density / Hover preview / Live activity) now render and
+  roundtrip through `cm_tweaks` in localStorage as intended.
+  Surfaced by the Playwright `tweaks.spec.ts` suite from v0.9.5;
+  test now asserts the positive path (picking a theme updates
+  persisted state).
+
 ## [0.9.5] — 2026-04-23
 
 ### Added
