@@ -6,6 +6,35 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.1.0] — 2026-04-23
+
+### Changed — graceful /exit via shell-wrap
+- **Session tabs now spawn a shell, then type `claude --resume` into
+  it** instead of running `claude` as argv[0]. Before: the PTY's
+  foreground process WAS claude, so `/exit` terminated the tab
+  entirely — the pane showed "session exited" and became useless.
+  After: the shell is the foreground process; claude runs as a
+  child; `/exit` closes claude and the shell prompt returns. **The
+  tab stays alive and reusable** — type a new command, run
+  another `claude --resume <other-sid>`, or just `cd` around.
+- **Tabs are session-bound only while claude is active.** Any tab
+  can be repurposed once the user exits claude. The sidebar
+  highlight (v0.9.5) still tracks which session is "active" in the
+  focused tab — when claude is gone, the tab becomes a plain shell
+  and the highlight clears.
+- **The typed command is chunked** (16 chars per WS frame, 30ms
+  gaps) so Ink-TUI doesn't treat it as a bracketed paste —
+  complements the v1.0.1 paste-split fix.
+- **Restart-ping delay bumped 5s → 8s** to accommodate the extra
+  shell-prompt + claude-startup time in the new flow.
+
+### Migration
+- Existing `spawn: {provider, sessionId, cwd}` layouts still
+  hydrate (legacy shape detector preserved via `spawnSessionId()`
+  helper). New tabs use `spawn: {cmd, cwd, _autoResume:{sessionId}}`.
+- No user action required — next "In viewer" click uses the new
+  flow automatically.
+
 ## [1.0.1] — 2026-04-23
 
 ### Fixed
