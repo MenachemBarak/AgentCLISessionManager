@@ -70,7 +70,33 @@ const RESUME_PROMPT_PICK_FULL = '\x1b[B\r';
 // auto-answered this boot, any later output still showing the prompt
 // text (e.g. scrollback) shouldn't re-send.
 if (!window._resumePromptHandled) window._resumePromptHandled = new Set();
-const RESTART_PING_DELAY_MS = 5000;  // wait for claude --resume prompt
+
+// Track which panes have had their auto-resume command typed in. Keyed
+// by spawn-id (the PTY's server-assigned id from the `ready` frame) so
+// each independent pane gets its own typing even if multiple panes share
+// a sessionId.
+if (!window._autoResumeTyped) window._autoResumeTyped = new Set();
+
+// Type a string into the PTY one frame at a time with a short gap
+// between chunks. Ink-TUI's bracketed-paste detection treats fast back-
+// to-back frames as a single paste — which ate the trailing Enter in
+// v1.0.0 and caused the "compact instead of resume" disaster. Chunking
+// 16 chars per frame with 30ms gaps is slow enough that each chunk
+// shows up as individual typing, fast enough that the user perceives
+// it as instant.
+async function typeIntoPty(send, text) {
+  const CHUNK = 16;
+  for (let i = 0; i < text.length; i += CHUNK) {
+    send({ type: 'input', data: text.slice(i, i + CHUNK) });
+    // eslint-disable-next-line no-await-in-loop
+    await new Promise((r) => setTimeout(r, 30));
+  }
+}
+// v1.1.0: under shell-wrap, we need to wait for: (a) the shell to
+// render its prompt (~1.2s), (b) the auto-typed `claude --resume` to
+// finish streaming (~2s for chunked typing), (c) claude to launch
+// + render its own prompt (~3s). 8s leaves margin.
+const RESTART_PING_DELAY_MS = 8000;
 
 function TerminalPane({ spawn, onExit, onReady, className }) {
   // `spawn` — object passed as the first WS frame. Shape:
@@ -153,15 +179,46 @@ function TerminalPane({ spawn, onExit, onReady, className }) {
         case 'ready': {
           setStatus('ready');
           onReady && onReady(msg.id);
+
+          // v1.1.0 (#47): shell-wrap session tabs. If this pane was
+          // opened via "In viewer" on a session, it spawned a shell
+          // (cmd.exe) in the session's cwd — NOT `claude --resume`
+          // directly. Here we type the resume command into the shell
+          // so claude takes over the PTY. When the user later runs
+          // `/exit`, claude quits and the shell prompt returns — the
+          // tab stays alive and reusable.
+          const autoResume = spawn?._autoResume;
+          if (
+            autoResume?.sessionId
+            && msg.id
+            && !window._autoResumeTyped.has(msg.id)
+          ) {
+            window._autoResumeTyped.add(msg.id);
+            // Wait ~1.2s for the shell prompt to render. Then type the
+            // command character-by-character (chunked) so Ink-TUI
+            // doesn't mistake it for a paste block. Trailing Enter is
+            // a SEPARATE frame for the same reason.
+            (async () => {
+              await new Promise((r) => setTimeout(r, 1200));
+              if (disposedRef.current) return;
+              if (!ws || ws.readyState !== WebSocket.OPEN) return;
+              const cmd = `claude --dangerously-skip-permissions --resume ${autoResume.sessionId}`;
+              await typeIntoPty((o) => send(o), cmd);
+              if (disposedRef.current) return;
+              if (!ws || ws.readyState !== WebSocket.OPEN) return;
+              send({ type: 'input', data: '\r' });
+            })();
+          }
+
           // Restart-ping: if this PTY is the resume for a session that was
           // restored from persisted layout (i.e. the viewer just booted),
           // and we haven't pinged that session yet this boot, write the
-          // "SOFTWARE RESTARTED" message after a short delay so claude
-          // --resume has time to finish its startup handshake and show the
-          // prompt. The delay is a heuristic — prompt-idle detection would
-          // be more robust but adds substantial complexity for marginal
-          // gain.
-          const sid = spawn?.sessionId;
+          // "SOFTWARE RESTARTED" message after a longer delay so the
+          // shell has run `claude --resume` AND claude has finished its
+          // startup handshake.
+          // Accepts either the legacy session spawn shape (spawn.sessionId,
+          // pre-v1.1.0) or the shell-wrap shape (spawn._autoResume.sessionId).
+          const sid = spawn?._autoResume?.sessionId || spawn?.sessionId;
           if (
             sid
             && window._restartPingPending.has(sid)

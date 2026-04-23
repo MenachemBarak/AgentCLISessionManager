@@ -427,12 +427,20 @@ let _terminalSeq = 0;
 // in any leaf pane's `spawn`. Used by the restart-ping flow to know which
 // sessions were resumed before the last shutdown. Handles nested splits
 // recursively. Skips ad-hoc shell panes (spawn.cmd but no sessionId).
+// A pane is "session-bound" if its spawn carries a sessionId in either
+// the legacy shape (spawn.sessionId / spawn.provider — pre-v1.1.0) or
+// the shell-wrap shape (spawn._autoResume.sessionId — v1.1.0+).
+function spawnSessionId(spawn) {
+  if (!spawn) return null;
+  return spawn._autoResume?.sessionId || spawn.sessionId || null;
+}
+
 function collectSessionIds(terminals) {
   const out = new Set();
   function walk(node) {
     if (!node) return;
     if (node.kind === 'pane' || (!node.kind && node.spawn)) {
-      const sid = node.spawn?.sessionId;
+      const sid = spawnSessionId(node.spawn);
       if (sid) out.add(sid);
       return;
     }
@@ -451,7 +459,7 @@ function collectSessionIds(terminals) {
 function firstSessionIdInTree(tree) {
   if (!tree) return null;
   if (tree.kind === 'pane' || (!tree.kind && tree.spawn)) {
-    return tree.spawn?.sessionId || null;
+    return spawnSessionId(tree.spawn);
   }
   if (tree.kind === 'split' && Array.isArray(tree.children)) {
     for (const c of tree.children) {
@@ -561,19 +569,26 @@ function RightPane({ selected, accent, onOpen, onActiveSessionChange }) {
     window.openInViewer = (session) => {
       if (!session || !session.id) return;
       const shortId = session.id.slice(0, 8);
-      // Label prefers userLabel > claudeTitle > "Resume <sid8>".
       const label = session.userLabel
         || (session.claudeTitle ? session.claudeTitle.slice(0, 24) : null)
         || `Resume ${shortId}`;
+      // v1.1.0 (#47): spawn a SHELL in the session's cwd and type the
+      // claude --resume command into it. This replaces the old
+      // `{provider, sessionId}` shape where `claude` was argv[0] — that
+      // model killed the tab on `/exit` because the PTY had nothing to
+      // fall back to. With a shell wrapping claude, `/exit` returns the
+      // user to the shell prompt and the tab stays alive + reusable.
       openTerminal({
         spawn: {
-          provider: session.provider || 'claude-code',
-          sessionId: session.id,
-          // Match external "New tab" behaviour: start the resumed shell in
-          // the session's original working directory. Without this the
-          // spawn inherits the viewer's cwd (C:\...\ClaudeSessionsViewer)
-          // which breaks relative-path references inside the session.
+          cmd: ['cmd.exe'],
           cwd: session.cwd,
+          // Frontend-only field — TerminalPane reads it to auto-type
+          // the resume command once the shell prompt is ready. Backend
+          // ignores unknown fields on the spawn payload.
+          _autoResume: {
+            sessionId: session.id,
+            provider: session.provider || 'claude-code',
+          },
         },
         label,
       });
