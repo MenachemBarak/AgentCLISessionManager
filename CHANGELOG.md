@@ -6,6 +6,33 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.0.1] — 2026-04-23
+
+### Fixed
+- **CRITICAL: restart-ping was auto-compacting sessions.** When the
+  viewer restored a resumed session, it sent the SOFTWARE RESTARTED
+  directive as `text + "\r"` in one WS input frame. Ink-TUI
+  interpreted the whole block as a bracketed paste, so the trailing
+  `\r` was consumed as "confirm the current menu option" — auto-
+  picking "Compact summary" (option 1, default) on the resume-choice
+  menu. User lost real context in downstream work. Reproduced live
+  on this machine.
+- **CRITICAL: restart-ping text appeared in chat input but never
+  sent.** Same root cause — the `\r` was eaten by the paste handler
+  as a literal newline, not Enter-to-submit. User had to press
+  Enter manually to send every resumed agent the restart directive.
+- **CRITICAL: "Resume full session as-is" auto-pick was selecting
+  option 1 instead of option 2.** Same root cause — `\x1b[B` +
+  `\r` in one paste block; the arrow never registered so Enter
+  confirmed option 1.
+
+### Fix mechanics
+All three bugs share a single fix: **split input keystrokes across
+separate WS frames with a short delay between.** text → wait 500ms
+→ `\r`. arrow-down → wait 200ms → `\r`. The delays let Ink close
+its bracketed-paste window before the next keystroke arrives, so
+each one is processed as an individual key event.
+
 ## [1.0.0] — 2026-04-23
 
 ### Changed — REBRAND

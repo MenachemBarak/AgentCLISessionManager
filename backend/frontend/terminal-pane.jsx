@@ -172,7 +172,18 @@ function TerminalPane({ spawn, onExit, onReady, className }) {
             setTimeout(() => {
               if (disposedRef.current) return;
               if (!ws || ws.readyState !== WebSocket.OPEN) return;
-              send({ type: 'input', data: RESTART_PING_TEXT + '\r' });
+              // CRITICAL: send text FIRST, wait, then Enter as a SEPARATE
+              // WS frame. If we send text+\r together, Ink-TUI treats it
+              // as bracketed paste — the trailing \r gets interpreted as
+              // "confirm current menu option" (v1.0.0 bug where this
+              // auto-picked "compact summary" on the resume-choice menu)
+              // AND the ping text lands in the chat input unsent.
+              send({ type: 'input', data: RESTART_PING_TEXT });
+              setTimeout(() => {
+                if (disposedRef.current) return;
+                if (!ws || ws.readyState !== WebSocket.OPEN) return;
+                send({ type: 'input', data: '\r' });
+              }, 500);
             }, RESTART_PING_DELAY_MS);
           }
           break;
@@ -194,10 +205,21 @@ function TerminalPane({ spawn, onExit, onReady, className }) {
             // Small delay so the prompt is fully rendered before we
             // answer — firing input before Ink finishes laying out the
             // options can be dropped.
+            // Split the keystrokes: cursor-down first, 200ms, then Enter
+            // as a separate frame. If we send both in one paste, Ink's
+            // bracketed-paste detection eats the arrow sequence and the
+            // Enter picks the default (option 1, summary) — which is the
+            // exact wrong choice. Proven in v1.0.0 where a user's
+            // session got compacted instead of continued.
             setTimeout(() => {
               if (disposedRef.current) return;
               if (!ws || ws.readyState !== WebSocket.OPEN) return;
-              send({ type: 'input', data: RESUME_PROMPT_PICK_FULL });
+              send({ type: 'input', data: '\x1b[B' });
+              setTimeout(() => {
+                if (disposedRef.current) return;
+                if (!ws || ws.readyState !== WebSocket.OPEN) return;
+                send({ type: 'input', data: '\r' });
+              }, 200);
             }, 400);
           }
           break;
