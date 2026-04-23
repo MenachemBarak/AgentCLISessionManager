@@ -42,7 +42,9 @@ jobs:
         env:
           CI: "1"
           CSV_TEST_MODE: "1"
-        run: npx playwright test
+        # Restrict to the default `chromium` project — the `daemon` project
+        # (ADR-18 / Task #42) is red-by-design until Phases 2-10 land.
+        run: npx playwright test --project=chromium
 
       - name: Upload Playwright report on failure
         if: failure()
@@ -153,7 +155,9 @@ jobs:
             # Run Playwright while the exe is still alive in this shell.
             Push-Location e2e
             try {
-              npx playwright test
+              # Restrict to default `chromium` project — daemon project is
+              # red-by-design (ADR-18 / Task #42).
+              npx playwright test --project=chromium
               if ($LASTEXITCODE -ne 0) {
                 Dump-Logs
                 throw "playwright exited with $LASTEXITCODE"
