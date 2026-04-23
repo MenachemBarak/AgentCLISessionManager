@@ -612,6 +612,65 @@ def set_session_user_label(sid: str, req: UserLabelReq) -> dict[str, Any]:
     return {"id": sid, "userLabel": _get_user_label(sid)}
 
 
+# ─────────────────────── session move ───────────────────────
+class SessionMovePlanReq(BaseModel):
+    targetCwd: str
+
+
+class SessionMoveExecuteReq(BaseModel):
+    targetCwd: str
+    confirm: bool = False
+
+
+@app.post("/api/sessions/{sid}/move/plan")
+def session_move_plan(sid: str, req: SessionMovePlanReq) -> dict[str, Any]:
+    """Dry-run for a session move — read-only.
+
+    Returns the structured plan from `move_session.plan_move`. Frontend
+    must show this to the user verbatim and only enable the confirm
+    button when `safe_to_move=True`. NEVER does I/O beyond reading.
+    """
+    from backend import move_session
+
+    return move_session.plan_move(PROJECTS_DIR, sid, req.targetCwd)
+
+
+@app.post("/api/sessions/{sid}/move/execute")
+def session_move_execute(sid: str, req: SessionMoveExecuteReq) -> dict[str, Any]:
+    """Perform the move. Requires explicit `confirm=true` in the body —
+    a missing confirm flag returns a 400 instead of silently moving.
+    """
+    if not req.confirm:
+        raise HTTPException(
+            status_code=400,
+            detail="confirm=true is required; call /move/plan first to see what will happen",
+        )
+    from backend import move_session
+
+    result = move_session.execute_move(PROJECTS_DIR, sid, req.targetCwd)
+    # On success, refresh the in-memory index eagerly — the watchdog
+    # Observer would eventually fire on_created at the new path, but
+    # callers that list /api/sessions immediately after the move would
+    # hit the old-entry-deleted, new-entry-not-yet-seen window and see
+    # the session disappear. Drop the stale entry AND re-scan the new
+    # path in the same request so `/api/sessions` is correct on the
+    # very next call.
+    if result.get("ok"):
+        _INDEX.pop(sid, None)
+        plan = result.get("plan") or {}
+        new_path = plan.get("dest_path") if isinstance(plan, dict) else None
+        if isinstance(new_path, str):
+            try:
+                _ = _scan_session_meta(Path(new_path), deep=False)
+                if _ is not None:
+                    _["_mtime"] = Path(new_path).stat().st_mtime
+                    _INDEX[sid] = _
+            except OSError:
+                # Watcher will pick it up on the next observation tick.
+                pass
+    return result
+
+
 @app.get("/api/sessions/{session_id}/preview")
 def session_preview(session_id: str) -> dict[str, Any]:
     meta = _INDEX.get(session_id)
