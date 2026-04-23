@@ -22,7 +22,12 @@ export default defineConfig({
     video: 'retain-on-failure',
   },
   projects: [
-    { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
+    { name: 'chromium', use: { ...devices['Desktop Chrome'] }, testIgnore: /tests[\/\\]daemon[\/\\]/ },
+    // ADR-18 / Task #42 daemon-split contract tests. Red by design against
+    // v1.1.0 (no daemon exists). Excluded from the default CI project so
+    // main stays green during the ~6-day implementation. Run locally with:
+    //   pnpm exec playwright test --project=daemon
+    { name: 'daemon', use: { ...devices['Desktop Chrome'] }, testMatch: /tests[\/\\]daemon[\/\\].*\.spec\.ts$/ },
   ],
   // When pointing at an external server (the built exe), don't start one.
   // Otherwise spin up the dev server against a tmp CLAUDE_HOME for hermetic runs.
