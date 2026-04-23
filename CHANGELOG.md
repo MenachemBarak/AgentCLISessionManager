@@ -6,6 +6,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.9.8] — 2026-04-23
+
+### Changed
+- **Restart-ping message is now more precise about agent behaviour.**
+  Replaces the short `"SOFTWARE RESTARTED - GO ON FROM WHERE YOU LEFT
+  OFF"` with a longer, explicit directive that tells the resumed agent
+  five things:
+    1. Go on EXACTLY from where you left off (no re-planning).
+    2. If you were idle waiting for user input, KEEP idling.
+    3. If you were in task progress, continue the work.
+    4. Do NOT take initiative beyond the pre-restart scope.
+    5. Validate that background tasks, services, and cron jobs you
+       were managing are still running as before.
+  Prevents the common failure mode where a resumed agent either
+  starts something new or gets confused about what "going on" means.
+
 ## [0.9.7] — 2026-04-23
 
 ### Added
