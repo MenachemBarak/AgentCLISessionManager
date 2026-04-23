@@ -435,6 +435,65 @@ function spawnSessionId(spawn) {
   return spawn._autoResume?.sessionId || spawn.sessionId || null;
 }
 
+// Rewrite a single leaf pane's `spawn` payload from the pre-v1.1.0
+// shape `{provider, sessionId, cwd}` (which spawns `claude` as argv[0]
+// of the PTY and dies in the frozen exe because claude.exe isn't on
+// the inherited PATH) to the v1.1.0 shell-wrap shape
+// `{cmd:['cmd.exe'], cwd, _autoResume:{sessionId, provider}}` so the
+// backend spawns a shell + the frontend auto-types the resume command.
+// Returns the possibly-migrated spawn plus a boolean indicating whether
+// a change was made (so callers can decide to re-persist).
+function migrateLegacySpawn(spawn) {
+  if (!spawn || typeof spawn !== 'object') return { spawn, changed: false };
+  // Already shell-wrap shape — leave it alone.
+  if (spawn._autoResume) return { spawn, changed: false };
+  // Legacy shape — has provider + sessionId but no _autoResume. Migrate.
+  if (spawn.provider && spawn.sessionId) {
+    const next = {
+      cmd: ['cmd.exe'],
+      _autoResume: {
+        sessionId: String(spawn.sessionId),
+        provider: String(spawn.provider),
+      },
+    };
+    if (spawn.cwd) next.cwd = spawn.cwd;
+    return { spawn: next, changed: true };
+  }
+  return { spawn, changed: false };
+}
+
+// Walk a restored terminals tree and migrate every legacy-shape leaf in
+// place. Returns { terminals: migratedArray, changed: bool } so we can
+// re-persist only when something actually changed.
+function migrateLegacyTerminals(terminals) {
+  let changed = false;
+  const visit = (node) => {
+    if (!node) return node;
+    if (node.kind === 'pane' || (!node.kind && node.spawn)) {
+      const res = migrateLegacySpawn(node.spawn);
+      if (res.changed) {
+        changed = true;
+        return { ...node, spawn: res.spawn };
+      }
+      return node;
+    }
+    if (node.kind === 'split' && Array.isArray(node.children)) {
+      const nextChildren = node.children.map(visit);
+      if (nextChildren.some((c, i) => c !== node.children[i])) {
+        return { ...node, children: nextChildren };
+      }
+      return node;
+    }
+    return node;
+  };
+  const next = terminals.map((tab) => {
+    const nextTree = visit(tab.tree);
+    if (nextTree !== tab.tree) return { ...tab, tree: nextTree };
+    return tab;
+  });
+  return { terminals: next, changed };
+}
+
 function collectSessionIds(terminals) {
   const out = new Set();
   function walk(node) {
@@ -501,16 +560,23 @@ function RightPane({ selected, accent, onOpen, onActiveSessionChange }) {
             return isFinite(n) && n > m ? n : m;
           }, 0);
           _terminalSeq = Math.max(_terminalSeq, maxSeq);
+          // v1.1.1 fix: migrate any pane persisted with the pre-v1.1.0
+          // `{provider, sessionId}` spawn shape to the new shell-wrap
+          // `{cmd:['cmd.exe'], _autoResume:{...}}` shape. The legacy
+          // shape spawns `claude` as argv[0] of the PTY, which dies in
+          // the frozen exe because the inherited PATH doesn't contain
+          // claude.exe — tab shows "session exited" and never resumes.
+          const { terminals: migrated } = migrateLegacyTerminals(state.terminals);
           // Seed the restart-ping pending set — any restored tab whose
           // tree holds a pane with a sessionId should get the
           // "SOFTWARE RESTARTED" nudge once its PTY is ready. Scope is
           // strictly "restored from persisted layout on this boot" so
           // later "In viewer" clicks don't re-ping.
-          const sids = collectSessionIds(state.terminals);
+          const sids = collectSessionIds(migrated);
           if (!window._restartPingPending) window._restartPingPending = new Set();
           if (!window._restartPingFired) window._restartPingFired = new Set();
           for (const sid of sids) window._restartPingPending.add(sid);
-          setTerminals(state.terminals);
+          setTerminals(migrated);
           if (state.activeId) setActiveId(state.activeId);
           if (state.focusedPaneId) setFocusedPaneId(state.focusedPaneId);
         }
