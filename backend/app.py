@@ -648,11 +648,26 @@ def session_move_execute(sid: str, req: SessionMoveExecuteReq) -> dict[str, Any]
     from backend import move_session
 
     result = move_session.execute_move(PROJECTS_DIR, sid, req.targetCwd)
-    # On success, drop any stale index entry so the next discover() rebuilds
-    # against the new path. We don't proactively re-index — the watcher
-    # picks up the new file via on_created and SSE pushes the row.
-    if result.get("ok") and sid in _INDEX:
-        del _INDEX[sid]
+    # On success, refresh the in-memory index eagerly — the watchdog
+    # Observer would eventually fire on_created at the new path, but
+    # callers that list /api/sessions immediately after the move would
+    # hit the old-entry-deleted, new-entry-not-yet-seen window and see
+    # the session disappear. Drop the stale entry AND re-scan the new
+    # path in the same request so `/api/sessions` is correct on the
+    # very next call.
+    if result.get("ok"):
+        _INDEX.pop(sid, None)
+        plan = result.get("plan") or {}
+        new_path = plan.get("dest_path") if isinstance(plan, dict) else None
+        if isinstance(new_path, str):
+            try:
+                _ = _scan_session_meta(Path(new_path), deep=False)
+                if _ is not None:
+                    _["_mtime"] = Path(new_path).stat().st_mtime
+                    _INDEX[sid] = _
+            except OSError:
+                # Watcher will pick it up on the next observation tick.
+                pass
     return result
 
 

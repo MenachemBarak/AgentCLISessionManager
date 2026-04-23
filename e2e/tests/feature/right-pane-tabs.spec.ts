@@ -17,6 +17,11 @@ test.describe('right pane — tabs and splits', () => {
     await page.goto('/');
     const rp = new RightPane(page);
 
+    // Gate on the testid being present — under the frozen exe on CI,
+    // React mount is noticeably slower than dev server and a premature
+    // capturePageState() would see an empty testid map.
+    await expect(page.getByTestId('right-tab-new-terminal')).toBeVisible({ timeout: 10_000 });
+
     // PROOF BEFORE: zero terminal tabs, zero tile-panes.
     const before = await capturePageState(page);
     expect(before.testidGroups['right-tab-new-terminal'] ?? 0).toBe(1);
@@ -75,6 +80,9 @@ test.describe('right pane — tabs and splits', () => {
   test('transcript pane is the default active tab', async ({ page }) => {
     await page.goto('/');
     const t = new Transcript(page);
+    // Wait for React mount; on the frozen exe, transcript-pane can take
+    // a beat longer to appear than on the dev server.
+    await expect(t.root()).toBeVisible({ timeout: 10_000 });
     expect(await t.isVisible()).toBe(true);
   });
 });
