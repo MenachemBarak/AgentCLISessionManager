@@ -36,7 +36,22 @@ function ptyWsUrl() {
 window._restartPingPending = window._restartPingPending ?? new Set();
 window._restartPingFired = window._restartPingFired ?? new Set();
 
-const RESTART_PING_TEXT = 'SOFTWARE RESTARTED - GO ON FROM WHERE YOU LEFT OFF';
+// The exact text the user specified. Preserves the user's phrasing
+// (including "LEFT OF" / "IDELING") so agents reading this don't feel
+// misquoted. The message deliberately includes explicit guardrails:
+//   1. GO ON EXACTLY — no re-planning, resume the same task
+//   2. IF IDLE, KEEP IDLING — do not proactively jump to something new
+//   3. IF IN PROGRESS, CONTINUE — resume the stopped work
+//   4. NO NEW INITIATIVE — stick to the pre-restart scope
+//   5. VALIDATE PRESERVED STATE — remind the agent to check background
+//      tasks / services / cron jobs it was managing before the restart
+const RESTART_PING_TEXT =
+  'SOFTWARE RESTARTED - GO ON EXACTLY FROM WHERE YOU LEFT OF - IF YOU WAS IDLE '
+  + 'WAITING FOR THE USER INPUT - KEEP IDELING, IF YOU WAS IN TASK PROGRESS AND '
+  + 'WORK PLEASE GO ON WITH THE WORK, DO NOT TAKE INITIATIVE BEYOND WHAT YOU '
+  + 'ALREADY DID BEFORE THIS SOFTWARE RESTART, PLEASE VALIDATE THAT ALL RUNNING '
+  + 'BACKGROUND TASKS, SERVICES AND CRON JOBS ETC ARE PRESERVED JUST AS HOW WE '
+  + 'LEFT OF BEFORE THE RESTART';
 const RESTART_PING_DELAY_MS = 5000;  // wait for claude --resume prompt
 
 function TerminalPane({ spawn, onExit, onReady, className }) {
