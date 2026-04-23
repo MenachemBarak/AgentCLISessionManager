@@ -6,6 +6,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.9.10] — 2026-04-23
+
+### Added
+- **Auto-select "Resume full session as-is" on the resume-choice
+  prompt.** Claude Code shows an interactive menu on `--resume` for
+  older/larger sessions offering (1) Resume from summary, (2) Resume
+  full session as-is, (3) Don't ask me again — defaulting to (1).
+  For unattended resume (the v0.9.4 restart-ping path, the "In viewer"
+  path, external wt.exe path) option (1) silently drops the context
+  the user was actively working with. The viewer now scans pane
+  output for the string `"Resume full session as-is"` and, once per
+  session per boot, sends `\x1b[B\r` (down-arrow + Enter) to pick
+  option 2. Deduped via a module-level Set so re-renders / scrollback
+  can't re-answer.
+
 ## [0.9.9] — 2026-04-23
 
 ### Added
