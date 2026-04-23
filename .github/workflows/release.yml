@@ -155,9 +155,13 @@ jobs:
           /tmp/rel-venv/bin/pip install dist/claude_sessions_viewer-*.whl
       - name: Verify CLI --version matches tag
         run: |
+          # Console-script entry-point still `claude-sessions-viewer`
+          # (pyproject [project.scripts] unchanged for v1.0.0 — the
+          # Python package/wheel name is an internal artifact). The
+          # --version output is rebranded to "AgentManager <ver>".
           OUT=$(/tmp/rel-venv/bin/claude-sessions-viewer --version)
           echo "$OUT"
-          echo "$OUT" | grep -qE "claude-sessions-viewer ${{ needs.build.outputs.version }}$"
+          echo "$OUT" | grep -qE "AgentManager ${{ needs.build.outputs.version }}$"
       - name: Smoke-test server against mock CLAUDE_HOME
         run: |
           export CLAUDE_HOME="$PWD/tests/fixtures/claude-home"
