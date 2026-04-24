@@ -58,12 +58,21 @@ _STEM_SUFFIXES = ("ing", "ed", "es", "s")
 
 
 def _tokenize(text: str) -> list[str]:
-    """Lowercase + split on non-word runs + drop stopwords + stem."""
+    """Lowercase + split on non-word runs + drop stopwords + stem.
+
+    Uses `\\w+` (unicode-aware in Python 3) so Hebrew, Chinese, accented
+    Latin, etc., all tokenize correctly. The earlier `[A-Za-z0-9_]+`
+    regex silently dropped every non-ASCII character — users with
+    non-English sessions got empty search results.
+    """
     tokens: list[str] = []
-    for raw in re.findall(r"[A-Za-z0-9_]+", (text or "").lower()):
+    for raw in re.findall(r"\w+", (text or "").lower(), flags=re.UNICODE):
         if raw in _STOPWORDS:
             continue
-        if len(raw) >= 5:
+        # Stem only ASCII-alphabetic tokens; don't attempt to stem
+        # non-ASCII words (e.g. Hebrew/Chinese have their own
+        # morphology that "-ing"/"-ed" stripping doesn't apply to).
+        if len(raw) >= 5 and raw.isascii():
             for suf in _STEM_SUFFIXES:
                 if raw.endswith(suf) and len(raw) - len(suf) >= 3:
                     raw = raw[: -len(suf)]
