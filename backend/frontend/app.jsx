@@ -870,16 +870,31 @@ function RightPane({ selected, accent, onOpen, onActiveSessionChange }) {
       }}>
         <Transcript session={selected} accent={accent} onOpen={onOpen}/>
       </div>
-      {terminals.map((t) => (
-        <div key={t.id} style={{
-          flex: 1, display: activeId === t.id ? 'flex' : 'none',
-          flexDirection: 'column', minHeight: 0, padding: 4,
-        }}>
-          <TileTree tree={t.tree} focusedId={focusedPaneId}
-            onFocus={setFocusedPaneId}
-            onUpdateTree={(updater) => updateActiveTree(updater)}/>
-        </div>
-      ))}
+      {terminals.map((t) => {
+        // Flatten every leaf in the tile tree. Each leaf renders as an
+        // empty data-pane-slot div inside <TileTree>; the TerminalPane
+        // components below render FLAT (not inside TileTree), keyed by
+        // pane.id so React's reconciler keeps them mounted across any
+        // restructuring of t.tree. Each TerminalPane appendChild's its
+        // wrapper into the matching slot via useLayoutEffect. Result:
+        // splitting a pane never unmounts the existing TerminalPane, so
+        // xterm + WebSocket + backend PTY are preserved.
+        const panes = window.splits.collectPanes(t.tree);
+        return (
+          <div key={t.id} style={{
+            flex: 1, display: activeId === t.id ? 'flex' : 'none',
+            flexDirection: 'column', minHeight: 0, padding: 4,
+            position: 'relative',
+          }}>
+            <TileTree tree={t.tree} focusedId={focusedPaneId}
+              onFocus={setFocusedPaneId}
+              onUpdateTree={(updater) => updateActiveTree(updater)}/>
+            {panes.map((p) => (
+              <TerminalPane key={p.id} paneId={p.id} spawn={p.spawn}/>
+            ))}
+          </div>
+        );
+      })}
     </div>
   );
 }

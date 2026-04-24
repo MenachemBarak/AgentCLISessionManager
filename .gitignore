@@ -20,3 +20,4 @@ staging/
 # local-only exploration (e.g. cloned reference repos)
 playground/
 .agentman/
+playgrounds/
