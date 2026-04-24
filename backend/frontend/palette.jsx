@@ -11,6 +11,54 @@
 const { useState: useS, useEffect: useE, useRef: useR, useMemo: useM } =
   (typeof React !== 'undefined' ? React : {});
 
+function PalettePreview({ session }) {
+  const msgs = Array.isArray(session.firstUserMessages) ? session.firstUserMessages : [];
+  const title = session.userLabel || session.claudeTitle || session.title || '(untitled)';
+  const when = session.lastActive
+    ? new Date(session.lastActive).toLocaleString()
+    : '';
+  return (
+    <>
+      <div style={{
+        fontFamily: 'Inter, sans-serif',
+        fontSize: 13, fontWeight: 600,
+        color: 'rgba(255,255,255,0.94)',
+        wordBreak: 'break-word',
+      }}>{title}</div>
+      <div style={{
+        fontFamily: 'JetBrains Mono, monospace',
+        fontSize: 10.5,
+        color: 'rgba(255,255,255,0.4)',
+        display: 'flex', flexDirection: 'column', gap: 2,
+      }}>
+        {session.cwd && <span style={{ wordBreak: 'break-all' }}>cwd: {session.cwd}</span>}
+        {session.branch && session.branch !== '-' && <span>branch: {session.branch}</span>}
+        {when && <span>last active: {when}</span>}
+        {typeof session._score === 'number' && <span>score: {session._score.toFixed(2)}</span>}
+      </div>
+      {msgs.length > 0 && (
+        <div style={{
+          display: 'flex', flexDirection: 'column', gap: 8,
+          marginTop: 4,
+          fontFamily: 'Inter, sans-serif',
+          fontSize: 12,
+          color: 'rgba(255,255,255,0.78)',
+          lineHeight: 1.5,
+        }}>
+          {msgs.slice(0, 3).map((m, i) => (
+            <div key={i} style={{
+              borderLeft: '2px solid rgba(215, 162, 74, 0.35)',
+              paddingLeft: 10,
+              wordBreak: 'break-word',
+              maxHeight: 120, overflow: 'hidden',
+            }}>{m.length > 260 ? m.slice(0, 260) + '…' : m}</div>
+          ))}
+        </div>
+      )}
+    </>
+  );
+}
+
 function CommandPalette({ open, onClose, onPick }) {
   const [query, setQuery] = useS('');
   const [items, setItems] = useS([]);
@@ -110,7 +158,7 @@ function CommandPalette({ open, onClose, onPick }) {
       <div
         data-testid="command-palette"
         style={{
-          width: 'min(640px, 92vw)',
+          width: 'min(900px, 92vw)',
           background: 'rgba(22,19,16,0.98)',
           border: '1px solid rgba(255,255,255,0.12)',
           borderRadius: 12,
@@ -132,48 +180,71 @@ function CommandPalette({ open, onClose, onPick }) {
             fontSize: 15,
           }}/>
         <div style={{
-          maxHeight: '50vh', overflowY: 'auto',
+          display: 'flex',
           borderTop: '1px solid rgba(255,255,255,0.06)',
+          maxHeight: '50vh',
         }}>
-          {query.trim() && items.length === 0 && !loading && (
-            <div style={{
-              padding: '22px 18px',
-              color: 'rgba(255,255,255,0.4)', fontSize: 13,
-              textAlign: 'center',
-            }}>No matches</div>
-          )}
-          {items.map((s, i) => (
-            <button
-              key={s.id}
-              data-testid={`palette-item-${s.id.slice(0, 8)}`}
-              onMouseEnter={() => setCursor(i)}
-              onClick={() => { onPick?.(s); onClose?.(); }}
-              style={{
-                width: '100%', padding: '10px 18px',
-                display: 'flex', alignItems: 'center', gap: 10,
-                background: i === cursor ? 'rgba(255,255,255,0.08)' : 'transparent',
-                border: 'none', cursor: 'pointer',
-                color: 'rgba(255,255,255,0.9)',
-                fontFamily: 'inherit', fontSize: 13,
-                textAlign: 'left',
-              }}>
-              <span style={{
-                fontFamily: 'JetBrains Mono, monospace',
-                fontSize: 10, color: 'rgba(255,255,255,0.35)',
-                minWidth: 72,
-              }}>{s.id.slice(0, 8)}</span>
-              <span style={{
-                flex: 1, minWidth: 0, overflow: 'hidden',
-                textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-              }}>{s.userLabel || s.claudeTitle || s.title || '(untitled)'}</span>
-              {s.active && (
+          {/* Result list — left column */}
+          <div style={{
+            flex: '1 1 45%', minWidth: 0,
+            overflowY: 'auto',
+            borderRight: items.length > 0 ? '1px solid rgba(255,255,255,0.06)' : 'none',
+          }}>
+            {query.trim() && items.length === 0 && !loading && (
+              <div style={{
+                padding: '22px 18px',
+                color: 'rgba(255,255,255,0.4)', fontSize: 13,
+                textAlign: 'center',
+              }}>No matches</div>
+            )}
+            {items.map((s, i) => (
+              <button
+                key={s.id}
+                data-testid={`palette-item-${s.id.slice(0, 8)}`}
+                onMouseEnter={() => setCursor(i)}
+                onClick={() => { onPick?.(s); onClose?.(); }}
+                style={{
+                  width: '100%', padding: '10px 14px',
+                  display: 'flex', alignItems: 'center', gap: 8,
+                  background: i === cursor ? 'rgba(255,255,255,0.08)' : 'transparent',
+                  border: 'none', cursor: 'pointer',
+                  color: 'rgba(255,255,255,0.9)',
+                  fontFamily: 'inherit', fontSize: 13,
+                  textAlign: 'left',
+                }}>
                 <span style={{
-                  fontSize: 10, color: '#4ade80',
-                  textTransform: 'uppercase', letterSpacing: 0.6,
-                }}>active</span>
-              )}
-            </button>
-          ))}
+                  fontFamily: 'JetBrains Mono, monospace',
+                  fontSize: 10, color: 'rgba(255,255,255,0.35)',
+                  minWidth: 64,
+                }}>{s.id.slice(0, 8)}</span>
+                <span style={{
+                  flex: 1, minWidth: 0, overflow: 'hidden',
+                  textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                }}>{s.userLabel || s.claudeTitle || s.title || '(untitled)'}</span>
+                {s.active && (
+                  <span style={{
+                    fontSize: 10, color: '#4ade80',
+                    textTransform: 'uppercase', letterSpacing: 0.6,
+                  }}>active</span>
+                )}
+              </button>
+            ))}
+          </div>
+          {/* Preview pane — right column. Shows first user messages + cwd
+              + last-active for the cursor's highlighted row. Only renders
+              when there's a highlighted item. */}
+          {items.length > 0 && items[cursor] && (
+            <div
+              data-testid="palette-preview"
+              style={{
+                flex: '1 1 55%', minWidth: 0,
+                overflowY: 'auto',
+                padding: '14px 18px',
+                display: 'flex', flexDirection: 'column', gap: 10,
+              }}>
+              <PalettePreview session={items[cursor]}/>
+            </div>
+          )}
         </div>
         <div style={{
           padding: '6px 18px',

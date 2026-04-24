@@ -20,6 +20,48 @@ test.describe('command palette (Ctrl+K)', () => {
     await expect(page.getByTestId('command-palette')).toHaveCount(0);
   });
 
+  test('preview pane shows first user messages for the highlighted row', async ({ page }) => {
+    await page.route('**/api/search*', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          query: 'x',
+          total: 1,
+          items: [
+            {
+              id: 'dddddddd-4444-4444-8444-444444444444',
+              title: 'Preview test',
+              userLabel: null,
+              claudeTitle: null,
+              firstUserMessages: [
+                'this is the first user message',
+                'and here is a second one for good measure',
+              ],
+              cwd: 'C:/some/path',
+              branch: 'main',
+              active: false,
+              _score: 4.2,
+              lastActive: 1712000000000,
+            },
+          ],
+        }),
+      });
+    });
+
+    await page.goto('/');
+    await expect(page.getByTestId('session-search-input')).toBeVisible({ timeout: 10_000 });
+    await page.keyboard.press('Control+k');
+    await page.getByTestId('command-palette-input').fill('preview');
+    await expect(page.getByTestId('palette-item-dddddddd')).toBeVisible({ timeout: 3_000 });
+
+    const preview = page.getByTestId('palette-preview');
+    await expect(preview).toBeVisible();
+    await expect(preview).toContainText('Preview test');
+    await expect(preview).toContainText('this is the first user message');
+    await expect(preview).toContainText('C:/some/path');
+  });
+
   test('typing calls /api/search and renders results', async ({ page }) => {
     const searchCalls: string[] = [];
     await page.route('**/api/search*', async (route) => {
