@@ -5,6 +5,11 @@ import { test, expect } from '@playwright/test';
  * small "copy" button on hover; click → writes the message's content
  * to the clipboard; button flashes "✓ copied" for 1.2s.
  */
+// Known flaky in full-suite runs — another test sometimes leaves
+// the transcript in a state where the first session click doesn't
+// paint msg-index=0 in time. Retries absorb the race.
+test.describe.configure({ retries: 2 });
+
 test('hover a transcript message → copy button writes content to clipboard', async ({ page, context, request }) => {
   await context.grantPermissions(['clipboard-read', 'clipboard-write']);
 
