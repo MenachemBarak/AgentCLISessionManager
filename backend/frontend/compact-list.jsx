@@ -370,13 +370,35 @@ function IconBtn({ label, onClick, Icon, testid }) {
 function ActiveSectionCompact({ active, accent, selectedId, onSelect, onOpen, onHover, onLeave, recentlyCreated }) {
   const groups = useMemoCL(() => groupByCwd(active), [active]);
   const [rescanning, setRescanning] = useStateCL(false);
+  // Transient feedback: shows "cleaned N stale" or "no ghosts" next to
+  // the button for ~3 s after a rescan completes, so users can tell
+  // whether the button actually did something. Solves the UX issue
+  // reported after v1.2.15's PID-reuse fix: users clicked Rescan and
+  // had no way to see that a ghost marker got cleaned up.
+  const [rescanFeedback, setRescanFeedback] = useStateCL(null);
   const handleRescan = async (e) => {
     e.stopPropagation();
     setRescanning(true);
+    setRescanFeedback(null);
+    let removed = null;
     try {
-      await fetch('/api/rescan', { method: 'POST' });
+      const r = await fetch('/api/rescan', { method: 'POST' });
+      if (r.ok) {
+        const body = await r.json().catch(() => ({}));
+        removed = typeof body.staleActiveMarkersRemoved === 'number'
+          ? body.staleActiveMarkersRemoved
+          : null;
+      }
     } catch {}
     setTimeout(() => setRescanning(false), 600);
+    if (removed !== null) {
+      setRescanFeedback(
+        removed > 0
+          ? `cleaned ${removed} stale`
+          : 'no ghosts'
+      );
+      setTimeout(() => setRescanFeedback(null), 3000);
+    }
   };
   return (
     <div style={{ display: 'flex', flexDirection: 'column' }}>
@@ -403,6 +425,18 @@ function ActiveSectionCompact({ active, accent, selectedId, onSelect, onOpen, on
               }}>
               {rescanning ? '…' : 'rescan'}
             </button>
+            {rescanFeedback && (
+              <span
+                data-testid="rescan-feedback"
+                style={{
+                  fontSize: 9.5,
+                  color: rescanFeedback === 'no ghosts' ? 'rgba(255,255,255,0.45)' : accent,
+                  fontFamily: 'inherit',
+                  animation: 'fadeInQuick 200ms',
+                }}>
+                {rescanFeedback}
+              </span>
+            )}
             <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
               <PulseDot color="#4ade80"/>
               live
