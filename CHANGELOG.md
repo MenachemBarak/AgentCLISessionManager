@@ -6,6 +6,32 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.2.6] — 2026-04-24
+
+### Added — pin sessions to top
+- **Star** any session from the left-pane (☆ appears on row hover;
+  ★ when pinned) and it floats to the top regardless of recency.
+  Click again to unpin. Persisted in the existing
+  `~/.claude/viewer-labels.json` next to user labels — no schema
+  migration needed.
+- New `POST /api/sessions/{sid}/pin {pinned: bool}` endpoint.
+  `/api/sessions` and `/api/search` both return a `pinned` field
+  and sort pinned-first in every mode.
+
+### Added — click session ID to copy it
+- The session UUID in the transcript header is now clickable — one
+  click → writes the full uuid to clipboard (with `✓ copied` green
+  feedback for 1.2s). Fallback to `execCommand('copy')` for pywebview
+  edge cases.
+
+### Fixed — session bus was dropping unknown fields
+- `normalize()` in the SSE session bus hard-listed known fields and
+  dropped everything else — which silently nuked the new `pinned`
+  field when it arrived via `session_updated` events. Now preserved.
+  Load-bearing for pin-to-top, and fixes a class of bug where new
+  backend fields wouldn't survive SSE updates without a parallel
+  frontend change.
+
 ## [1.2.5] — 2026-04-24
 
 ### Added — export session to markdown
