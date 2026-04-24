@@ -98,10 +98,19 @@ async function typeIntoPty(send, text) {
 // + render its own prompt (~3s). 8s leaves margin.
 const RESTART_PING_DELAY_MS = 8000;
 
-function TerminalPane({ spawn, onExit, onReady, className }) {
+function TerminalPane({ spawn, onExit, onReady, className, paneId }) {
   // `spawn` — object passed as the first WS frame. Shape:
   //   { cmd: ["cmd.exe"] }                // ad-hoc shell
   //   { provider: "claude-code", sessionId: "<uuid>" }  // resume
+  //
+  // `paneId` (optional) — when set, this TerminalPane is rendered flat
+  // at the tab level (see app.jsx) and appendChild's its wrapper div
+  // into the matching <div data-pane-slot={paneId}/> slot rendered by
+  // TileTree. This keeps xterm + WebSocket + PTY alive across tile-tree
+  // restructures (split, close-sibling, etc.) because the React tree
+  // never sees the pane move. Legacy callers without paneId render in
+  // place, unchanged.
+  const wrapperRef = React.useRef(null);
   const hostRef = React.useRef(null);
   const termRef = React.useRef(null);
   const wsRef = React.useRef(null);
@@ -109,6 +118,17 @@ function TerminalPane({ spawn, onExit, onReady, className }) {
   const disposedRef = React.useRef(false);
   const [status, setStatus] = React.useState('connecting'); // connecting|ready|exited|error
   const [error, setError] = React.useState(null);
+
+  // Move our wrapper div into the matching tile slot after every render.
+  // useLayoutEffect runs after DOM commits and before paint, so users
+  // never see a flash at the wrong position. No-op if already attached.
+  React.useLayoutEffect(() => {
+    if (!paneId) return;
+    const slot = document.querySelector(`[data-pane-slot="${paneId}"]`);
+    if (slot && wrapperRef.current && wrapperRef.current.parentElement !== slot) {
+      slot.appendChild(wrapperRef.current);
+    }
+  });
 
   React.useEffect(() => {
     disposedRef.current = false;
@@ -360,6 +380,7 @@ function TerminalPane({ spawn, onExit, onReady, className }) {
 
   return (
     <div
+      ref={wrapperRef}
       className={className || ''}
       style={{
         position: 'relative', width: '100%', height: '100%',

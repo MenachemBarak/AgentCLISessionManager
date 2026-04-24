@@ -103,12 +103,20 @@ function setRatio(tree, splitPath, ratio) {
 // Flatten all panes to a list so the container can keep every
 // TerminalPane mounted even when it's not visible (a pane on a
 // non-active tab gets display:none, not unmount).
+//
+// Defensive: persisted layouts sometimes contain unknown `kind`s
+// (the v0.9.0 `kind:"leaf"` probe bug is the canonical example) or
+// a split without valid children. Mirror TileTree's migration: treat
+// anything non-split as a pane, and skip nodes we can't recurse into.
 function collectPanes(tree) {
   const out = [];
   function walk(node) {
-    if (!node) return;
-    if (node.kind === 'pane') out.push(node);
-    else node.children.forEach(walk);
+    if (!node || typeof node !== 'object') return;
+    if (node.kind === 'split' && Array.isArray(node.children)) {
+      node.children.forEach(walk);
+      return;
+    }
+    if (node.id) out.push({ ...node, kind: 'pane' });
   }
   walk(tree);
   return out;
@@ -143,6 +151,12 @@ function TileTree({ tree, focusedId, onFocus, onUpdateTree, pathPrefix }) {
   }
 
   if (tree.kind === 'pane') {
+    // Empty slot div. The TerminalPane for this pane is rendered flat at
+    // the tab level (see app.jsx) and imperatively appendChild's its
+    // wrapper into this slot via useLayoutEffect — so when the tile tree
+    // restructures (split/close), React doesn't remount TerminalPane, its
+    // xterm, WebSocket, or backend PTY. Only the DOM parent of the
+    // already-alive wrapper changes.
     return (
       <div
         onMouseDown={() => onFocus(tree.id)}
@@ -154,9 +168,8 @@ function TileTree({ tree, focusedId, onFocus, onUpdateTree, pathPrefix }) {
           borderRadius: 4, overflow: 'hidden', position: 'relative',
         }}
         data-testid={`tile-pane-${tree.id}`}
-      >
-        <TerminalPane spawn={tree.spawn}/>
-      </div>
+        data-pane-slot={tree.id}
+      />
     );
   }
 
