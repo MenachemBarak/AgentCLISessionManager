@@ -6,6 +6,44 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.2.0] — 2026-04-24
+
+### Added — proper Windows installer (task #48)
+- **AgentManager-1.2.0-setup.exe** ships alongside the raw .exe. Real
+  Windows installer via Inno Setup 6 with standard Next/Next/Finish UX,
+  **Add/Remove Programs entry** (currently missing from the raw-exe
+  install), installer-managed Desktop + Start-menu shortcuts, silent-
+  install support (`/VERYSILENT`) for scripting. Per-user install
+  (no UAC prompt) to `%LOCALAPPDATA%\Programs\AgentManager\`.
+- Uninstall from Add/Remove Programs first invokes the `--uninstall
+  --yes` CLI (Phase 6) to kill any running daemon + PTY grandchildren,
+  THEN removes files — covers the Squirrel/VSCode-style orphan-process
+  class of bug.
+
+### Added — daemon-split architecture, opt-in (task #42)
+- `AGENTMANAGER_DAEMON=1` env var enables the new two-exe model:
+  short-lived UI shim probes `127.0.0.1:8765`, autostarts a detached
+  daemon if absent, navigates the webview with a per-install bearer
+  token in the URL fragment. Opt-in for one release — default in v1.3.
+- Daemon owns: PTYs, WebSocket bridge, JSONL index, watchdog, ring
+  buffer (256 KB per PTY), layout state, updater. UI restart /
+  reconnect now **rehydrates scrollback** via WS reattach-by-id +
+  ring-buffer replay (no more starting from an empty shell after
+  restart).
+- REST surface: `GET /api/health`, `POST /api/pty`, `POST /api/pty/{id}/write`,
+  `GET /api/pty/{id}/replay`, `POST /api/shutdown` — auth-gated via
+  `Authorization: Bearer <token>` in daemon mode; untouched in legacy.
+- `AgentManager.exe --probe-daemon` returns exit 0 (ours) / 1 (absent) /
+  3 (port held by unrelated process) for scripting.
+- `AgentManager.exe --uninstall [--yes] [--dry-run]` performs the
+  seven-step tear-down from ADR-18 Law 3.
+
+### Research & design
+- ADR-18 (`docs/design/adr-18-daemon-split.md`) — architecture,
+  research against VSCode ptyHost / Cursor / Docker Desktop /
+  WezTerm mux-server, and the INVISIBLE + FULLY TESTABLE +
+  UNINSTALLABLE three-law constraints driving every decision.
+
 ## [1.1.1] — 2026-04-24
 
 ### Fixed — persisted session tabs auto-resume on upgrade
