@@ -16,6 +16,7 @@ import argparse
 import os
 import socket
 import sys
+from typing import Any
 import threading
 import time
 import urllib.request
@@ -219,7 +220,7 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
-def _launch_daemon_mode(webview_mod) -> int | None:
+def _launch_daemon_mode(webview_mod: Any) -> int | None:
     """Opt-in daemon-split launch path (ADR-18 / Task #42).
 
     Returns:

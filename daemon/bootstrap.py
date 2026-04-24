@@ -23,7 +23,7 @@ import secrets
 import sys
 import time
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import AbstractContextManager, contextmanager
 from pathlib import Path
 
 
@@ -66,8 +66,10 @@ def _restrict_acl_to_current_user(path: Path) -> None:
     if sys.platform != "win32":
         return
     try:
-        import ntsecuritycon as con
-        import win32security
+        # pywin32 modules are Windows-only; mypy on linux CI sees them as
+        # missing, mypy on Windows sees them as untyped.
+        import ntsecuritycon as con  # type: ignore[import-not-found,import-untyped,unreachable]
+        import win32security  # type: ignore[import-not-found,import-untyped,unreachable]
 
         user, _domain, _type = win32security.LookupAccountName("", os.environ.get("USERNAME", ""))
         sd = win32security.SECURITY_DESCRIPTOR()
@@ -170,7 +172,7 @@ def acquire_singleton_pid(daemon_version: str) -> Iterator[Path]:
             pass
 
 
-def bootstrap(daemon_version: str) -> tuple[str, Iterator[Path]]:
+def bootstrap(daemon_version: str) -> tuple[str, AbstractContextManager[Path]]:
     """Run the full daemon bootstrap.
 
     Returns (bearer_token, pid_lock_cm). Caller is expected to enter
