@@ -140,11 +140,12 @@ test.describe('session move — /api/sessions/{sid}/move', () => {
     // PROOF AFTER #2: /api/sessions reflects the new path.
     // The execute handler does an eager re-scan, but on slow Windows CI
     // runners the scan can lag the HTTP response by a beat. Poll for up
-    // to 5s before failing — the invariant is "eventually shows up", not
-    // "synchronously visible".
+    // to 10s before failing — the invariant is "eventually shows up",
+    // not "synchronously visible". (Was 5s; still flaked on builds with
+    // heavy concurrent I/O — 10s absorbs those without masking regressions.)
     let moved: { id: string; path: string } | undefined;
     let lastAfter: { items: Array<{ id: string; path?: string }> } | undefined;
-    for (let i = 0; i < 25; i += 1) {
+    for (let i = 0; i < 50; i += 1) {
       lastAfter = await listSessions(request);
       moved = lastAfter.items.find((s) => s.id === MOVE_TEST_SID) as typeof moved;
       if (moved?.path?.includes('C--move-test-target-A')) break;
