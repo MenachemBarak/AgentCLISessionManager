@@ -642,6 +642,41 @@ def update_apply() -> dict[str, Any]:
     return dict(result)
 
 
+@app.get("/api/search")
+def search_sessions(q: str = "", limit: int = 20) -> dict[str, Any]:
+    """Smart session search (task #40).
+
+    Natural-language query → ranked session list. Local TF-weighted
+    ranking (see backend/search.py); no external calls. Returns the
+    same row shape as /api/sessions plus a `_score` field so the UI
+    can show a relevance indicator if wanted.
+    """
+    from backend.search import rank_sessions
+
+    if not _INDEX_BUILT:
+        build_index()
+    if not q.strip():
+        return {"query": q, "total": 0, "items": []}
+
+    active_ids = _get_active_session_ids()
+    labels = _load_labels()
+    rows: list[dict[str, Any]] = []
+    for meta in _INDEX.values():
+        m: dict[str, Any] = {k: v for k, v in meta.items() if not k.startswith("_")}
+        m.setdefault("provider", "claude-code")
+        if m["id"] in active_ids:
+            m["active"] = True
+            m["activityLabel"] = _activity_for(Path(meta["path"]))
+        entry = labels.get(m["id"]) if isinstance(labels.get(m["id"]), dict) else {}
+        m["userLabel"] = entry.get("userLabel") if entry else None
+        rows.append(m)
+    # Pre-sort by recency so score-ties break toward the more recent
+    # session (stable sort in rank_sessions preserves input order).
+    rows.sort(key=lambda s: s["lastActive"], reverse=True)
+    ranked = rank_sessions(q, rows, limit=max(1, min(limit, 100)))
+    return {"query": q, "total": len(ranked), "items": ranked}
+
+
 @app.get("/api/sessions")
 def list_sessions(limit: int = 1000, offset: int = 0) -> dict[str, Any]:
     if not _INDEX_BUILT:
