@@ -121,6 +121,17 @@ function TerminalPane({ spawn, onExit, onReady, className, paneId }) {
   const [status, setStatus] = React.useState('connecting'); // connecting|ready|exited|error
   const [error, setError] = React.useState(null);
 
+  // React's "original parent" for our wrapper — whatever DOM element
+  // our wrapper was inserted into on first render (the tab div, as
+  // part of app.jsx's flat panes.map). React will later call
+  // `removeChild(wrapper)` on this parent when our pane is unmounted
+  // (e.g. closing a split). If we've moved the wrapper elsewhere via
+  // appendChild below, that removeChild throws "not a child of this
+  // node" and React unmounts the ENTIRE sibling subtree — which is
+  // exactly the v1.2.16 bug where closing one pane of a 2-pane split
+  // collapsed the whole tab. Capture on mount and restore on unmount.
+  const reactParentRef = React.useRef(null);
+
   // Move our wrapper div into the matching tile slot after every render.
   // useLayoutEffect runs after DOM commits and before paint, so users
   // never see a flash at the wrong position. No-op if already attached.
@@ -135,6 +146,9 @@ function TerminalPane({ spawn, onExit, onReady, className, paneId }) {
   // search within it instead.
   React.useLayoutEffect(() => {
     if (!paneId || !wrapperRef.current) return;
+    if (!reactParentRef.current) {
+      reactParentRef.current = wrapperRef.current.parentElement;
+    }
     const tabRoot = wrapperRef.current.closest('[data-terminal-tab]');
     const root = tabRoot || document;
     const slot = root.querySelector(`[data-pane-slot="${paneId}"]`);
@@ -142,6 +156,21 @@ function TerminalPane({ spawn, onExit, onReady, className, paneId }) {
       slot.appendChild(wrapperRef.current);
     }
   });
+
+  // On unmount, restore the wrapper to React's original parent so
+  // React's own removeChild call doesn't trip on "not a child of this
+  // node" and tear down the whole sibling tree. Must be useLayoutEffect
+  // so the cleanup runs SYNCHRONOUSLY during commit, before React's
+  // DOM mutation phase (useEffect cleanup is async and fires too late).
+  React.useLayoutEffect(() => {
+    return () => {
+      const wrapper = wrapperRef.current;
+      const parent = reactParentRef.current;
+      if (wrapper && parent && wrapper.parentElement !== parent) {
+        try { parent.appendChild(wrapper); } catch { /* ignore */ }
+      }
+    };
+  }, []);
 
   React.useEffect(() => {
     disposedRef.current = false;
