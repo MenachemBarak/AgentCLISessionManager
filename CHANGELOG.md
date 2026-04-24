@@ -6,6 +6,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.2.12] — 2026-04-24
+
+### Fixed — session move: race between shutil-preserved mtime and the index
+- Follow-up to v1.2.8's session-move reliability fix. The fallback
+  rebuild was quietly no-op'ing because `shutil.copy2` preserves
+  the source's mtime, and `build_index()` skips files whose mtime
+  matches the cached entry. Passing `force=True` clears the cache
+  before the rebuild so the relocated session is always visible on
+  the very next `/api/sessions` call — reproduced deterministically
+  before the fix, 5/5 passing after.
+
 ## [1.2.11] — 2026-04-24
 
 ### Added — filter-state visibility in the session list footer
