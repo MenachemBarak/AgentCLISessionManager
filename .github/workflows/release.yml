@@ -156,16 +156,19 @@ jobs:
             }
           }
       - name: Build installer
-        shell: bash
+        # PowerShell (not bash) — Git-Bash/MSYS on Windows path-translates
+        # any arg starting with `/` into a filesystem path, mangling
+        # Inno Setup's `/D<var>=<value>` flags. ISCC then sees "more
+        # than one script filename" and bails. pwsh passes args
+        # through verbatim.
+        shell: pwsh
         run: |
-          VER="${{ needs.build.outputs.version }}"
-          EXE="dist/AgentManager-${VER}-windows-x64.exe"
-          mkdir -p installer/Output
-          iscc /Qp \
-            "/DMyAppVersion=${VER}" \
-            "/DMyExeSource=../${EXE}" \
-            installer/agentmanager.iss
-          ls -la installer/Output/
+          $ver = "${{ needs.build.outputs.version }}"
+          $exe = "dist\AgentManager-$ver-windows-x64.exe"
+          New-Item -ItemType Directory -Force installer\Output | Out-Null
+          & iscc /Qp "/DMyAppVersion=$ver" "/DMyExeSource=..\$exe" installer\agentmanager.iss
+          if ($LASTEXITCODE -ne 0) { throw "iscc failed with exit $LASTEXITCODE" }
+          Get-ChildItem installer\Output\
       - name: Smoke-test installer (silent + uninstall)
         shell: pwsh
         run: |
