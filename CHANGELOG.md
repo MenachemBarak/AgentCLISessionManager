@@ -6,6 +6,56 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.2.15] — 2026-04-24
+
+### Fixed — splitting a pane no longer restarts its terminals (#86)
+- TileTree's inline `<TerminalPane>` was remounted on every tree
+  restructure (leaf → split-with-two-children), closing its xterm
+  + WebSocket and killing the backend PTY. Long-running agents
+  died on every split. Fix: render all TerminalPanes flat at tab
+  level, keyed by pane.id, with each imperatively appendChild'ing
+  its wrapper into a matching `data-pane-slot` div. React's
+  reconciler never sees the pane move → xterm + WS + PTY preserved.
+  Validated against the Tabby (70.7k⭐) and Zellij (31.9k⭐) pane
+  architectures, both of which decouple ownership from layout the
+  same way.
+
+### Fixed — resume-menu auto-pick (#87)
+- `\x1b[B\r` (down-arrow + Enter) kept getting eaten by Ink-TUI's
+  bracketed-paste detector even split across two frames, so users
+  landed in 'Resume from summary' instead of 'Resume full session
+  as-is'. Switched to a single-digit `2` keystroke — Ink's select
+  component accepts that as a one-keystroke pick, nothing for the
+  paste detector to swallow. Also extended sid extraction to
+  include the v1.1.0+ shell-wrap shape so the auto-pick actually
+  fires for those tabs.
+
+### Fixed — ghost-active sessions after closing external PowerShell (#88)
+- Closing a PowerShell that was hosting `claude` freed its PID, and
+  Windows often handed that PID to an unrelated process seconds
+  later. Our `psutil.pid_exists(pid)` check returned True for the
+  new owner and the marker stayed "active" forever, even after
+  explicit Rescan. Fix: cross-check `psutil.Process(pid).create_time()`
+  against the marker's recorded `startedAt` (±3 s tolerance). PID
+  reuse → mismatch → treat as stale → exclude from active set AND
+  delete on rescan. Legacy markers without `startedAt` keep the
+  old pid_exists-only behavior.
+
+### Fixed — red E2E on main (msg-copy timeout) (#85)
+- Playwright worker cross-test pollution: a prior test left a
+  terminal tab active in the persisted layout, and the msg-copy
+  test's session-row click updates `selectedId` without switching
+  `activeId` back to `'transcript'`. The test now explicitly
+  clicks the Transcript tab before asserting on transcript DOM.
+
+### Added — 'Open in manager' for active-unmanaged sessions (#89)
+- Active sessions started outside AgentManager (a `claude` in a
+  raw PowerShell window, etc.) now expose an 'Open in manager'
+  action in the left-pane list. Clicking spawns a shell-wrap tab
+  running `claude --resume <sid>` in the session's cwd. The button
+  disappears once the session is already represented by a tab to
+  prevent duplicate spawns.
+
 ## [1.2.14] — 2026-04-24
 
 ### Added — `(press /)` hint in search placeholder
