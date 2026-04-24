@@ -109,6 +109,7 @@ def read_or_create_token() -> str:
 def _pid_alive(pid: int) -> bool:
     try:
         import psutil  # vendored in our reqs already
+
         return psutil.pid_exists(pid)
     except Exception:  # noqa: BLE001
         return False
@@ -147,8 +148,7 @@ def acquire_singleton_pid(daemon_version: str) -> Iterator[Path]:
     existing = _read_existing_pid_entry()
     if existing is not None and _pid_alive(int(existing["pid"])) and existing["pid"] != os.getpid():
         raise DaemonAlreadyRunning(
-            f"daemon pid {existing['pid']} already running "
-            f"(version {existing.get('daemonVersion', '?')})"
+            f"daemon pid {existing['pid']} already running " f"(version {existing.get('daemonVersion', '?')})"
         )
     # Write our own entry atomically.
     entry = {

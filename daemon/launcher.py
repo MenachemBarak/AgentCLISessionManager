@@ -72,7 +72,11 @@ def probe(port: int = 8765, timeout: float = 1.5) -> ProbeResult:
             import json
 
             body = json.loads(r.read().decode("utf-8", errors="replace"))
-            if isinstance(body, dict) and body.get("ok") is True and isinstance(body.get("daemonVersion"), str):
+            if (
+                isinstance(body, dict)
+                and body.get("ok") is True
+                and isinstance(body.get("daemonVersion"), str)
+            ):
                 return {"state": "ours", "daemonVersion": body["daemonVersion"]}
             return {"state": "other", "httpStatus": r.status}
     except urllib.error.HTTPError as e:
