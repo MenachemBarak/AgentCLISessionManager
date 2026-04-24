@@ -857,22 +857,19 @@ def session_move_execute(sid: str, req: SessionMoveExecuteReq) -> dict[str, Any]
         new_path = plan.get("dest_path") if isinstance(plan, dict) else None
         if isinstance(new_path, str):
             try:
-                _ = _scan_session_meta(Path(new_path), deep=False)
-                if _ is not None:
-                    _["_mtime"] = Path(new_path).stat().st_mtime
-                    _INDEX[sid] = _
-            except OSError:
-                # Watcher will pick it up on the next observation tick.
+                meta = _scan_session_meta(Path(new_path), deep=False)
+                if meta is not None:
+                    meta["_mtime"] = Path(new_path).stat().st_mtime
+                    _INDEX[sid] = meta
+            except Exception:  # noqa: BLE001 — scan failure is recoverable
                 pass
-        # Defence in depth: if the eager re-scan missed the session for
-        # any reason (edge case in path handling, file not yet flushed,
-        # etc.), fall through to a full rescan so /api/sessions is
-        # guaranteed correct on the very next call. This fixes the
-        # long-running test flake where `execute_move` succeeded on
-        # disk but the session briefly vanished from the index.
+        # Defence in depth: full rebuild on ANY miss. build_index reads
+        # mtimes and skips unchanged entries, so the cost is bounded even
+        # for large installs. `force=True` clears the cache first so a
+        # cwd-rename doesn't leave stale entries around.
         if sid not in _INDEX:
             try:
-                build_index()
+                build_index(force=True)
             except Exception:  # noqa: BLE001 — best-effort; we already succeeded on disk
                 pass
     return result
