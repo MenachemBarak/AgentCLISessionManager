@@ -85,8 +85,15 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r backend/requirements.txt
           pip install pyinstaller==6.11.1
-      - name: Build exe
+      - name: Build exe (one-file — legacy raw-exe asset)
         run: pyinstaller pyinstaller.spec --noconfirm --clean
+      - name: Build one-folder tree (for installer — closes #45)
+        # The one-folder build drops AgentManager.exe + _internal/
+        # alongside it. No runtime _MEI extraction → no "Failed to
+        # remove temporary directory" dialog. The Inno Setup installer
+        # packages this tree; the raw one-file .exe stays published
+        # so the existing auto-update chain keeps working.
+        run: pyinstaller pyinstaller-onedir.spec --noconfirm --clean
       - name: Rename exe with version + publish legacy alias
         shell: bash
         run: |
@@ -155,18 +162,21 @@ jobs:
               choco install innosetup --version=6.2.2 -y --no-progress
             }
           }
-      - name: Build installer
+      - name: Build installer (wraps one-folder tree — closes #45)
         # PowerShell (not bash) — Git-Bash/MSYS on Windows path-translates
         # any arg starting with `/` into a filesystem path, mangling
         # Inno Setup's `/D<var>=<value>` flags. ISCC then sees "more
-        # than one script filename" and bails. pwsh passes args
-        # through verbatim.
+        # than one script filename" and bails. pwsh passes args through.
         shell: pwsh
         run: |
           $ver = "${{ needs.build.outputs.version }}"
-          $exe = "dist\AgentManager-$ver-windows-x64.exe"
+          # One-folder build emits dist/AgentManager/ with AgentManager.exe
+          # at its root and _internal/ alongside. Installer packages it
+          # recursively (see installer/agentmanager.iss [Files] section).
+          $folder = "dist\AgentManager"
+          if (-not (Test-Path $folder)) { throw "onedir build output missing: $folder" }
           New-Item -ItemType Directory -Force installer\Output | Out-Null
-          & iscc /Qp "/DMyAppVersion=$ver" "/DMyExeSource=..\$exe" installer\agentmanager.iss
+          & iscc /Qp "/DMyAppVersion=$ver" "/DMyAppFolder=..\$folder" installer\agentmanager.iss
           if ($LASTEXITCODE -ne 0) { throw "iscc failed with exit $LASTEXITCODE" }
           Get-ChildItem installer\Output\
       - name: Smoke-test installer (silent + uninstall)
