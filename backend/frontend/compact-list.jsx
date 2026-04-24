@@ -93,6 +93,40 @@ function CompactDropdown({ value, options, onChange, label }) {
   );
 }
 
+function PinStar({ session, accent, visible }) {
+  // Optimistic toggle — flip local state immediately so the click feels
+  // instant; on API failure the next /api/sessions poll corrects it.
+  const [optimistic, setOptimistic] = useStateCL(null);
+  const pinned = optimistic !== null ? optimistic : !!session.pinned;
+  if (!visible && !pinned) return null;
+  const onClick = async (e) => {
+    e.stopPropagation();
+    const next = !pinned;
+    setOptimistic(next);
+    try {
+      await fetch(`/api/sessions/${session.id}/pin`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pinned: next }),
+      });
+    } catch {
+      setOptimistic(!next);
+    }
+  };
+  return (
+    <button
+      onClick={onClick}
+      data-testid={`session-pin-${session.id.slice(0, 8)}`}
+      title={pinned ? 'Unpin session' : 'Pin session to top'}
+      style={{
+        background: 'transparent', border: 'none', cursor: 'pointer',
+        padding: '2px 4px', lineHeight: 1,
+        color: pinned ? accent : 'rgba(255,255,255,0.35)',
+        fontSize: 13,
+      }}>{pinned ? '★' : '☆'}</button>
+  );
+}
+
 function CompactRow({ session, accent, selected, onSelect, onOpen, onHover, onLeave, isNew }) {
   const [hover, setHover] = useStateCL(false);
   const ref = useRefCL(null);
@@ -143,6 +177,7 @@ function CompactRow({ session, accent, selected, onSelect, onOpen, onHover, onLe
         }} title={session.title}>
           <RowTitle session={session} accent={accent}/>
         </div>
+        <PinStar session={session} accent={accent} visible={hover || session.pinned}/>
       </div>
       <div style={{
         display: 'flex', alignItems: 'center', gap: 6,
@@ -382,8 +417,13 @@ function groupByCwd(list) {
     if (!map.has(key)) map.set(key, []);
     map.get(key).push(s);
   }
-  // sort folders by most-recent lastActive in each group
+  // Group order: any folder containing a pinned session floats to the
+  // top regardless of recency; within each pinned/unpinned bucket sort
+  // by the group's most-recent lastActive.
   return [...map.entries()].sort((a, b) => {
+    const aPinned = a[1].some((s) => s.pinned) ? 1 : 0;
+    const bPinned = b[1].some((s) => s.pinned) ? 1 : 0;
+    if (aPinned !== bPinned) return bPinned - aPinned;
     const ma = Math.max(...a[1].map((s) => s.lastActive));
     const mb = Math.max(...b[1].map((s) => s.lastActive));
     return mb - ma;

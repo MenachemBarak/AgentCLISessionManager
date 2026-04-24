@@ -28,6 +28,7 @@ function normalize(s) {
     activityLabel: s.activityLabel || null,
     firstUserMessages: s.firstUserMessages || [],
     transcript: s.transcript || [],
+    pinned: !!s.pinned,
   };
 }
 
