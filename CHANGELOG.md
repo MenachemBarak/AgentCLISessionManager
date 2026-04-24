@@ -6,6 +6,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.2.4] — 2026-04-24
+
+### Added — recent searches in Ctrl+K
+- Opening the palette with an empty query now shows your last 5
+  searches as one-click shortcuts under a "Recent searches" heading.
+  Click one to re-run the search instantly. Stored in localStorage
+  (`cm_recent_queries`, LRU, max 5) so it survives restarts.
+
 ## [1.2.3] — 2026-04-24
 
 ### Added — Ctrl+K preview pane
