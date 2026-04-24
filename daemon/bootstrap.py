@@ -65,11 +65,11 @@ def _restrict_acl_to_current_user(path: Path) -> None:
     """
     if sys.platform != "win32":
         return
-    try:
+    try:  # type: ignore[unreachable]
         # pywin32 modules are Windows-only; mypy on linux CI sees them as
         # missing, mypy on Windows sees them as untyped.
-        import ntsecuritycon as con  # type: ignore[import-not-found,import-untyped,unreachable]
-        import win32security  # type: ignore[import-not-found,import-untyped,unreachable]
+        import ntsecuritycon as con  # type: ignore[import-not-found,import-untyped]
+        import win32security  # type: ignore[import-not-found,import-untyped]
 
         user, _domain, _type = win32security.LookupAccountName("", os.environ.get("USERNAME", ""))
         sd = win32security.SECURITY_DESCRIPTOR()
