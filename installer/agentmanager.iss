@@ -7,15 +7,19 @@
 ; Build from CI:
 ;   iscc installer/agentmanager.iss
 ;     /DMyAppVersion=1.2.0
-;     /DMyExeSource=dist/AgentManager-1.2.0-windows-x64.exe
+;     /DMyAppFolder=dist/AgentManager
 ;
 ; Output: installer/Output/AgentManager-<version>-setup.exe
+;
+; MyAppFolder is the one-folder PyInstaller output tree — wrap the
+; whole directory so users never hit the one-file _MEI extraction
+; race (closes #45).
 
 #ifndef MyAppVersion
   #define MyAppVersion "0.0.0-dev"
 #endif
-#ifndef MyExeSource
-  #define MyExeSource "dist\AgentManager.exe"
+#ifndef MyAppFolder
+  #define MyAppFolder "dist\AgentManager"
 #endif
 
 #define MyAppName       "AgentManager"
@@ -60,7 +64,11 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: checkedonce
 
 [Files]
-Source: "{#MyExeSource}"; DestDir: "{app}"; DestName: "{#MyAppExeName}"; Flags: ignoreversion
+; One-folder PyInstaller layout — recurse into the whole tree
+; (AgentManager.exe + _internal/ with python3x.dll, frontend/, etc.).
+; `ignoreversion` makes overwrite-on-upgrade skip the DLL timestamp
+; check which would otherwise false-positive and stop the install.
+Source: "{#MyAppFolder}\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
