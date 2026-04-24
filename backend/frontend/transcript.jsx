@@ -308,15 +308,54 @@ function highlightText(text, query) {
 
 function Message({ msg, accent, msgIndex, highlight, isCurrentMatch }) {
   const isUser = msg.role === 'user';
+  const [hover, setHover] = useStateTx(false);
+  const [copied, setCopied] = useStateTx(false);
+  const onCopy = async (e) => {
+    e.stopPropagation();
+    try {
+      await navigator.clipboard.writeText(msg.content || '');
+    } catch {
+      // execCommand fallback for pywebview edge cases
+      const ta = document.createElement('textarea');
+      ta.value = msg.content || '';
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand('copy'); } catch {}
+      document.body.removeChild(ta);
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1200);
+  };
   return (
     <div
       data-msg-index={msgIndex}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
       style={{
         display: 'flex', gap: 12, alignItems: 'flex-start',
         outline: isCurrentMatch ? `2px solid ${accent}66` : 'none',
         outlineOffset: 4, borderRadius: 4,
         transition: 'outline 150ms',
+        position: 'relative',
       }}>
+      {(hover || copied) && (
+        <button
+          onClick={onCopy}
+          data-testid={`msg-copy-${msgIndex}`}
+          title="Copy message content"
+          style={{
+            position: 'absolute', top: 2, right: 2,
+            padding: '2px 7px',
+            background: 'rgba(22,19,16,0.92)',
+            border: '1px solid rgba(255,255,255,0.12)',
+            borderRadius: 4,
+            fontFamily: 'JetBrains Mono, ui-monospace, monospace',
+            fontSize: 10, letterSpacing: 0.4,
+            color: copied ? '#4ade80' : 'rgba(255,255,255,0.65)',
+            textTransform: 'uppercase',
+            cursor: 'pointer',
+          }}>{copied ? '✓ copied' : 'copy'}</button>
+      )}
       <div style={{
         width: 26, height: 26, borderRadius: 6, flexShrink: 0,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
