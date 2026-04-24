@@ -124,10 +124,21 @@ function TerminalPane({ spawn, onExit, onReady, className, paneId }) {
   // Move our wrapper div into the matching tile slot after every render.
   // useLayoutEffect runs after DOM commits and before paint, so users
   // never see a flash at the wrong position. No-op if already attached.
+  //
+  // v1.2.16: scope the slot lookup to the owning tab div. Pane ids are
+  // only unique within a single tab's tree, not across tabs — and
+  // already-persisted layouts can contain cross-tab duplicates (e.g.
+  // term-1 has pane-2, term-4 also has pane-2). A document-wide
+  // querySelector returned the FIRST match in document order, which
+  // was almost always the hidden wrong tab and left the visible tab
+  // blank. Walk up to the nearest [data-terminal-tab] ancestor and
+  // search within it instead.
   React.useLayoutEffect(() => {
-    if (!paneId) return;
-    const slot = document.querySelector(`[data-pane-slot="${paneId}"]`);
-    if (slot && wrapperRef.current && wrapperRef.current.parentElement !== slot) {
+    if (!paneId || !wrapperRef.current) return;
+    const tabRoot = wrapperRef.current.closest('[data-terminal-tab]');
+    const root = tabRoot || document;
+    const slot = root.querySelector(`[data-pane-slot="${paneId}"]`);
+    if (slot && wrapperRef.current.parentElement !== slot) {
       slot.appendChild(wrapperRef.current);
     }
   });

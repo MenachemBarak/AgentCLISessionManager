@@ -680,6 +680,26 @@ function RightPane({ selected, accent, onOpen, onActiveSessionChange }) {
           // the frozen exe because the inherited PATH doesn't contain
           // claude.exe — tab shows "session exited" and never resumes.
           const { terminals: migrated } = migrateLegacyTerminals(state.terminals);
+          // v1.2.16 fix: pane ids are a module-level counter in
+          // terminal-splits.jsx (`_paneSeq`). Without this bump, newly-
+          // created panes after a restart reuse "pane-1", "pane-2", …
+          // that already exist in the restored tree — and because my
+          // v1.2.15 portal refactor keys TerminalPanes on pane.id, the
+          // collisions produce blank panes (React collapses dup keys).
+          // Also dedup any already-collided ids from older corrupt
+          // states so the user's existing layout heals on load.
+          let paneIdsChanged = false;
+          for (const t of migrated) {
+            window.splits.bumpPaneSeqPastTree(t.tree);
+          }
+          const globallySeen = new Set();
+          for (const t of migrated) {
+            const r = window.splits.dedupePaneIds(t.tree, globallySeen);
+            if (r.changed) {
+              t.tree = r.tree;
+              paneIdsChanged = true;
+            }
+          }
           // Seed the restart-ping pending set — any restored tab whose
           // tree holds a pane with a sessionId should get the
           // "SOFTWARE RESTARTED" nudge once its PTY is ready. Scope is
@@ -690,6 +710,21 @@ function RightPane({ selected, accent, onOpen, onActiveSessionChange }) {
           if (!window._restartPingFired) window._restartPingFired = new Set();
           for (const sid of sids) window._restartPingPending.add(sid);
           setTerminals(migrated);
+          // If we had to dedupe pane ids, re-persist so the corrupted
+          // state doesn't re-appear on the next boot.
+          if (paneIdsChanged) {
+            try {
+              fetch('/api/layout-state', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  terminals: migrated,
+                  activeId: state.activeId,
+                  focusedPaneId: state.focusedPaneId,
+                }),
+              });
+            } catch {}
+          }
           if (state.activeId) setActiveId(state.activeId);
           if (state.focusedPaneId) setFocusedPaneId(state.focusedPaneId);
         }
@@ -917,11 +952,13 @@ function RightPane({ selected, accent, onOpen, onActiveSessionChange }) {
         // xterm + WebSocket + backend PTY are preserved.
         const panes = window.splits.collectPanes(t.tree);
         return (
-          <div key={t.id} style={{
-            flex: 1, display: activeId === t.id ? 'flex' : 'none',
-            flexDirection: 'column', minHeight: 0, padding: 4,
-            position: 'relative',
-          }}>
+          <div key={t.id}
+            data-terminal-tab={t.id}
+            style={{
+              flex: 1, display: activeId === t.id ? 'flex' : 'none',
+              flexDirection: 'column', minHeight: 0, padding: 4,
+              position: 'relative',
+            }}>
             <TileTree tree={t.tree} focusedId={focusedPaneId}
               onFocus={setFocusedPaneId}
               onUpdateTree={(updater) => updateActiveTree(updater)}/>
