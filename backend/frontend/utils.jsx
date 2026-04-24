@@ -32,10 +32,18 @@ function formatTokens(t) {
 // sort helpers
 function sortSessions(list, mode) {
   const arr = [...list];
-  if (mode === 'created') arr.sort((a, b) => b.createdAt - a.createdAt);
-  else if (mode === 'created_asc') arr.sort((a, b) => a.createdAt - b.createdAt);
-  else if (mode === 'messages') arr.sort((a, b) => b.messageCount - a.messageCount);
-  else arr.sort((a, b) => b.lastActive - a.lastActive);
+  // Pinned sessions always sort first regardless of the chosen mode.
+  // Within each pinned/unpinned group, the mode's comparator applies.
+  const pinRank = (s) => (s.pinned ? 0 : 1);
+  if (mode === 'created') {
+    arr.sort((a, b) => pinRank(a) - pinRank(b) || b.createdAt - a.createdAt);
+  } else if (mode === 'created_asc') {
+    arr.sort((a, b) => pinRank(a) - pinRank(b) || a.createdAt - b.createdAt);
+  } else if (mode === 'messages') {
+    arr.sort((a, b) => pinRank(a) - pinRank(b) || b.messageCount - a.messageCount);
+  } else {
+    arr.sort((a, b) => pinRank(a) - pinRank(b) || b.lastActive - a.lastActive);
+  }
   return arr;
 }
 

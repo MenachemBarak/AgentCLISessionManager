@@ -112,6 +112,36 @@ def _set_user_label(sid: str, label: str | None) -> None:
     _save_labels(d)
 
 
+def _get_pinned(sid: str) -> bool:
+    e = _load_labels().get(sid)
+    return bool(e.get("pinned")) if isinstance(e, dict) else False
+
+
+def _set_pinned(sid: str, pinned: bool) -> None:
+    """Flip the pinned flag in the shared viewer-labels.json store.
+
+    Additive to the existing userLabel entry — both coexist in the
+    same file under the same sid key. Unpinning drops the field (and
+    deletes the whole entry if nothing else is there) to keep the
+    file from accumulating cruft.
+    """
+    d = _load_labels()
+    raw = d.get(sid)
+    entry: dict[str, Any] = raw if isinstance(raw, dict) else {}
+    if pinned:
+        entry["pinned"] = True
+        entry["pinnedAt"] = time.time()
+        d[sid] = entry
+    else:
+        entry.pop("pinned", None)
+        entry.pop("pinnedAt", None)
+        if not entry:
+            d.pop(sid, None)
+        else:
+            d[sid] = entry
+    _save_labels(d)
+
+
 app = FastAPI(title="AgentManager", version=__version__)
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
@@ -712,10 +742,12 @@ def search_sessions(q: str = "", limit: int = 20) -> dict[str, Any]:
             m["activityLabel"] = _activity_for(Path(meta["path"]))
         entry = labels.get(m["id"]) if isinstance(labels.get(m["id"]), dict) else {}
         m["userLabel"] = entry.get("userLabel") if entry else None
+        m["pinned"] = bool(entry.get("pinned")) if entry else False
         rows.append(m)
-    # Pre-sort by recency so score-ties break toward the more recent
-    # session (stable sort in rank_sessions preserves input order).
-    rows.sort(key=lambda s: s["lastActive"], reverse=True)
+    # Pre-sort: pinned first, then recency, so score-ties break toward
+    # the user's preferred order (stable sort in rank_sessions
+    # preserves this input order).
+    rows.sort(key=lambda s: (0 if s.get("pinned") else 1, -s["lastActive"]))
     ranked = rank_sessions(q, rows, limit=max(1, min(limit, 100)))
     return {"query": q, "total": len(ranked), "items": ranked}
 
@@ -738,12 +770,27 @@ def list_sessions(limit: int = 1000, offset: int = 0) -> dict[str, Any]:
             m["activityLabel"] = _activity_for(Path(meta["path"]))
         entry = labels.get(m["id"]) if isinstance(labels.get(m["id"]), dict) else {}
         m["userLabel"] = entry.get("userLabel") if entry else None
+        m["pinned"] = bool(entry.get("pinned")) if entry else False
         items.append(m)
-    items.sort(key=lambda s: s["lastActive"], reverse=True)
+    # Pinned-first, then recency. Sort is stable so ties preserve the
+    # original (mtime) order within each group.
+    items.sort(key=lambda s: (0 if s.get("pinned") else 1, -s["lastActive"]))
     return {
         "total": len(items),
         "items": items[offset : offset + limit],
     }
+
+
+class PinReq(BaseModel):
+    pinned: bool
+
+
+@app.post("/api/sessions/{sid}/pin")
+def pin_session(sid: str, req: PinReq) -> dict[str, Any]:
+    """Toggle the pinned flag for a session. Pinned sessions sort first
+    in /api/sessions regardless of last-active time."""
+    _set_pinned(sid, req.pinned)
+    return {"id": sid, "pinned": _get_pinned(sid)}
 
 
 @app.get("/api/sessions/{sid}/label")
