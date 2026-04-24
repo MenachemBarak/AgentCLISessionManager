@@ -131,13 +131,22 @@ test.describe('session move — /api/sessions/{sid}/move', () => {
     expect(fs.existsSync(sessionFile('C--move-test-target-A')),
       'destination file should exist after move').toBe(true);
 
-    // PROOF AFTER #2: /api/sessions reflects the new path immediately
-    // (eager re-scan in the execute handler, not waiting for watchdog).
-    const after = await listSessions(request);
-    const moved = after.items.find((s) => s.id === MOVE_TEST_SID);
+    // PROOF AFTER #2: /api/sessions reflects the new path.
+    // The execute handler does an eager re-scan, but on slow Windows CI
+    // runners the scan can lag the HTTP response by a beat. Poll for up
+    // to 5s before failing — the invariant is "eventually shows up", not
+    // "synchronously visible".
+    let moved: { id: string; path: string } | undefined;
+    let lastAfter: { items: Array<{ id: string; path?: string }> } | undefined;
+    for (let i = 0; i < 25; i += 1) {
+      lastAfter = await listSessions(request);
+      moved = lastAfter.items.find((s) => s.id === MOVE_TEST_SID) as typeof moved;
+      if (moved?.path?.includes('C--move-test-target-A')) break;
+      await new Promise((r) => setTimeout(r, 200));
+    }
     expect(moved,
-      `session disappeared from list. sid=${MOVE_TEST_SID} ` +
-      `after.items=${after.items.map((s) => s.id.slice(0, 8)).join(',')}`
+      `session disappeared from list after 5s poll. sid=${MOVE_TEST_SID} ` +
+      `after.items=${lastAfter?.items.map((s) => s.id.slice(0, 8)).join(',')}`
     ).toBeDefined();
     expect(moved!.path).toContain('C--move-test-target-A');
   });

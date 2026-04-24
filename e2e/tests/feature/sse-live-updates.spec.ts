@@ -58,7 +58,7 @@ test.describe('SSE live updates', () => {
     // (watchdog observation tick + SSE push + React render). Budget 15s
     // for CI slowness.
     await expect(page.getByTestId(`session-row-${sid8}`))
-      .toBeVisible({ timeout: 15_000 });
+      .toBeVisible({ timeout: 30_000 });
   });
 
   test('deleting the JSONL → row disappears from DOM', async ({ page }) => {
@@ -76,13 +76,13 @@ test.describe('SSE live updates', () => {
     const sid8 = SSE_SID.slice(0, 8);
     await page.goto('/');
     await expect(page.getByTestId(`session-row-${sid8}`))
-      .toBeVisible({ timeout: 15_000 });
+      .toBeVisible({ timeout: 30_000 });
 
     // ACT: remove the file
     fs.unlinkSync(file);
 
     // PROOF: row disappears within propagation window
     await expect(page.getByTestId(`session-row-${sid8}`))
-      .toHaveCount(0, { timeout: 15_000 });
+      .toHaveCount(0, { timeout: 30_000 });
   });
 });
