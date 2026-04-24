@@ -15,8 +15,14 @@ import * as os from 'os';
 import * as path from 'path';
 import { execSync } from 'child_process';
 
-/** %LOCALAPPDATA%\AgentManager — daemon state root. */
+/** %LOCALAPPDATA%\AgentManager — daemon state root.
+ *
+ * Respects `AGENTMANAGER_STATE_DIR` so the daemon e2e project can
+ * probe a tmp dir that the daemon process was launched with.
+ */
 export function agentManagerStateDir(): string {
+  const override = process.env.AGENTMANAGER_STATE_DIR;
+  if (override) return override;
   const base = process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local');
   return path.join(base, 'AgentManager');
 }
@@ -94,6 +100,19 @@ export async function daemonGet(pathname: string): Promise<Response> {
   const token = readToken();
   return fetch(`http://127.0.0.1:8765${pathname}`, {
     headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+/** HTTP PUT with token. */
+export async function daemonPut(pathname: string, body?: unknown): Promise<Response> {
+  const token = readToken();
+  return fetch(`http://127.0.0.1:8765${pathname}`, {
+    method: 'PUT',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'content-type': 'application/json',
+    },
+    body: body == null ? undefined : JSON.stringify(body),
   });
 }
 

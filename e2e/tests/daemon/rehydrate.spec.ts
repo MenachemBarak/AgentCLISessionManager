@@ -4,7 +4,7 @@
  * Part of ADR-18 / Task #42. Red against v1.1.0 by design.
  */
 import { test, expect } from '@playwright/test';
-import { daemonGet, daemonPost } from '../../helpers/daemon-probe';
+import { daemonGet, daemonPost, daemonPut } from '../../helpers/daemon-probe';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -65,7 +65,7 @@ test.describe('PTY survives UI restart (ADR-18 §Ring buffer & rehydrate)', () =
     await page.goto('/');
     // Write a custom layout via the existing PUT /api/layout-state endpoint.
     const sentinel = `layout-${Date.now()}`;
-    await daemonPost('/api/layout-state', {
+    await daemonPut('/api/layout-state', {
       terminals: [{ id: sentinel, label: 'probe', tree: { kind: 'pane', id: 'p1' } }],
       activeId: sentinel,
       focusedPaneId: 'p1',
@@ -80,7 +80,7 @@ test.describe('PTY survives UI restart (ADR-18 §Ring buffer & rehydrate)', () =
   test('two UIs against one daemon see the same layout (Phase 5)', async ({ page, context }) => {
     await page.goto('/');
     const marker = `multi-ui-${Date.now()}`;
-    await daemonPost('/api/layout-state', {
+    await daemonPut('/api/layout-state', {
       terminals: [{ id: marker, label: 'probe', tree: { kind: 'pane', id: 'p1' } }],
       activeId: marker,
       focusedPaneId: 'p1',
