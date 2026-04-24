@@ -21,6 +21,7 @@ import time
 import urllib.request
 import webbrowser
 from pathlib import Path
+from typing import Any
 
 from backend.__version__ import __version__
 
@@ -219,7 +220,7 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
-def _launch_daemon_mode(webview_mod) -> int | None:
+def _launch_daemon_mode(webview_mod: Any) -> int | None:
     """Opt-in daemon-split launch path (ADR-18 / Task #42).
 
     Returns:

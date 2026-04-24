@@ -23,7 +23,7 @@ import secrets
 import sys
 import time
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import AbstractContextManager, contextmanager
 from pathlib import Path
 
 
@@ -65,9 +65,11 @@ def _restrict_acl_to_current_user(path: Path) -> None:
     """
     if sys.platform != "win32":
         return
-    try:
-        import ntsecuritycon as con
-        import win32security
+    try:  # type: ignore[unreachable]
+        # pywin32 modules are Windows-only; mypy on linux CI sees them as
+        # missing, mypy on Windows sees them as untyped.
+        import ntsecuritycon as con  # type: ignore[import-not-found,import-untyped]
+        import win32security  # type: ignore[import-not-found,import-untyped]
 
         user, _domain, _type = win32security.LookupAccountName("", os.environ.get("USERNAME", ""))
         sd = win32security.SECURITY_DESCRIPTOR()
@@ -107,6 +109,7 @@ def read_or_create_token() -> str:
 def _pid_alive(pid: int) -> bool:
     try:
         import psutil  # vendored in our reqs already
+
         return psutil.pid_exists(pid)
     except Exception:  # noqa: BLE001
         return False
@@ -145,8 +148,7 @@ def acquire_singleton_pid(daemon_version: str) -> Iterator[Path]:
     existing = _read_existing_pid_entry()
     if existing is not None and _pid_alive(int(existing["pid"])) and existing["pid"] != os.getpid():
         raise DaemonAlreadyRunning(
-            f"daemon pid {existing['pid']} already running "
-            f"(version {existing.get('daemonVersion', '?')})"
+            f"daemon pid {existing['pid']} already running " f"(version {existing.get('daemonVersion', '?')})"
         )
     # Write our own entry atomically.
     entry = {
@@ -170,7 +172,7 @@ def acquire_singleton_pid(daemon_version: str) -> Iterator[Path]:
             pass
 
 
-def bootstrap(daemon_version: str) -> tuple[str, Iterator[Path]]:
+def bootstrap(daemon_version: str) -> tuple[str, AbstractContextManager[Path]]:
     """Run the full daemon bootstrap.
 
     Returns (bearer_token, pid_lock_cm). Caller is expected to enter
