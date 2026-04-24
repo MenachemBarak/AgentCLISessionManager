@@ -1,6 +1,6 @@
 // Read-only transcript pane — shown on the right side
 
-const { useState: useStateTx, useEffect: useEffectTx, useRef: useRefTx } = React;
+const { useState: useStateTx, useEffect: useEffectTx, useRef: useRefTx, useMemo: useMemoTx } = React;
 
 function CopySessionId({ sid }) {
   const [copied, setCopied] = useStateTx(false);
@@ -39,9 +39,66 @@ function CopySessionId({ sid }) {
 
 function Transcript({ session, accent, onOpen }) {
   const scrollRef = useRefTx(null);
+  const [findOpen, setFindOpen] = useStateTx(false);
+  const [findQuery, setFindQuery] = useStateTx('');
+  const [findIndex, setFindIndex] = useStateTx(0);
   useEffectTx(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [session?.id]);
+
+  // Ctrl+F opens the find bar. Active when the transcript pane has focus
+  // (any element inside it) OR when the bar is already open. Esc closes.
+  useEffectTx(() => {
+    const onKey = (e) => {
+      const ctrl = e.ctrlKey || e.metaKey;
+      if (ctrl && e.key === 'f') {
+        // Skip if focus is in a terminal / input outside the transcript.
+        const ae = document.activeElement;
+        const inXterm = !!ae?.closest?.('.xterm');
+        if (inXterm) return;
+        // Only hijack when there's actually a session loaded with content.
+        if (!session) return;
+        e.preventDefault();
+        setFindOpen(true);
+        setFindIndex(0);
+        setTimeout(() => {
+          const input = document.querySelector('[data-testid="transcript-find-input"]');
+          input?.focus?.();
+          input?.select?.();
+        }, 20);
+      } else if (e.key === 'Escape' && findOpen) {
+        e.preventDefault();
+        setFindOpen(false);
+        setFindQuery('');
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [session, findOpen]);
+
+  // Compute match indices into the transcript array. A 'match' is a
+  // message whose content contains the query (case-insensitive). We
+  // highlight the substring inside Message via a prop.
+  const matchedIndices = useMemoTx(() => {
+    if (!findOpen || !findQuery.trim() || !session?.transcript) return [];
+    const q = findQuery.toLowerCase();
+    const out = [];
+    session.transcript.forEach((m, i) => {
+      if ((m.content || '').toLowerCase().includes(q)) out.push(i);
+    });
+    return out;
+  }, [findOpen, findQuery, session?.transcript]);
+
+  // Scroll the current match into view.
+  useEffectTx(() => {
+    if (!findOpen || matchedIndices.length === 0) return;
+    const idx = matchedIndices[findIndex % matchedIndices.length];
+    const el = document.querySelector(`[data-msg-index="${idx}"]`);
+    el?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }, [findOpen, findIndex, matchedIndices]);
+
+  const currentMatchMsgIndex =
+    matchedIndices.length === 0 ? -1 : matchedIndices[findIndex % matchedIndices.length];
 
   if (!session) {
     return (
@@ -146,6 +203,59 @@ function Transcript({ session, accent, onOpen }) {
         </div>
       </div>
 
+      {findOpen && (
+        <div data-testid="transcript-find-bar" style={{
+          display: 'flex', alignItems: 'center', gap: 8,
+          padding: '8px 18px',
+          borderBottom: '1px solid rgba(255,255,255,0.08)',
+          background: 'rgba(255,255,255,0.03)',
+        }}>
+          <span style={{
+            fontFamily: 'JetBrains Mono, ui-monospace, monospace',
+            fontSize: 10.5, color: 'rgba(255,255,255,0.4)',
+            textTransform: 'uppercase', letterSpacing: 0.6,
+          }}>find</span>
+          <input
+            data-testid="transcript-find-input"
+            value={findQuery}
+            onChange={(e) => { setFindQuery(e.target.value); setFindIndex(0); }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                if (matchedIndices.length > 0) {
+                  const next = e.shiftKey
+                    ? (findIndex - 1 + matchedIndices.length) % matchedIndices.length
+                    : (findIndex + 1) % matchedIndices.length;
+                  setFindIndex(next);
+                }
+              }
+            }}
+            placeholder="Find in transcript…"
+            style={{
+              flex: 1, background: 'transparent', border: 'none', outline: 'none',
+              color: 'rgba(255,255,255,0.94)',
+              fontFamily: 'inherit', fontSize: 13,
+            }}/>
+          <span data-testid="transcript-find-count" style={{
+            fontFamily: 'JetBrains Mono, ui-monospace, monospace',
+            fontSize: 10.5, color: 'rgba(255,255,255,0.4)',
+            minWidth: 60, textAlign: 'right',
+          }}>
+            {findQuery.trim()
+              ? (matchedIndices.length
+                  ? `${(findIndex % matchedIndices.length) + 1}/${matchedIndices.length}`
+                  : '0 matches')
+              : ''}
+          </span>
+          <button
+            onClick={() => { setFindOpen(false); setFindQuery(''); }}
+            title="Close (Esc)"
+            style={{
+              background: 'transparent', border: 'none', cursor: 'pointer',
+              color: 'rgba(255,255,255,0.5)', padding: '2px 6px', fontSize: 14,
+            }}>×</button>
+        </div>
+      )}
       {/* Messages */}
       <div ref={scrollRef} style={{
         flex: 1, overflowY: 'auto',
@@ -153,7 +263,9 @@ function Transcript({ session, accent, onOpen }) {
       }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 18, maxWidth: 780 }}>
           {session.transcript.map((m, i) => (
-            <Message key={i} msg={m} accent={accent}/>
+            <Message key={i} msg={m} accent={accent} msgIndex={i}
+              highlight={findOpen ? findQuery : ''}
+              isCurrentMatch={i === currentMatchMsgIndex}/>
           ))}
           {session.active && (
             <div style={{
@@ -172,12 +284,39 @@ function Transcript({ session, accent, onOpen }) {
   );
 }
 
-function Message({ msg, accent }) {
+function highlightText(text, query) {
+  if (!query) return text;
+  const q = query.toLowerCase();
+  const src = text || '';
+  const parts = [];
+  let i = 0;
+  const srcLower = src.toLowerCase();
+  while (i < src.length) {
+    const hit = srcLower.indexOf(q, i);
+    if (hit < 0) { parts.push(src.slice(i)); break; }
+    if (hit > i) parts.push(src.slice(i, hit));
+    parts.push(
+      <mark key={parts.length} style={{
+        background: 'rgba(215, 162, 74, 0.45)',
+        color: 'inherit', padding: 0, borderRadius: 2,
+      }}>{src.slice(hit, hit + q.length)}</mark>
+    );
+    i = hit + q.length;
+  }
+  return parts;
+}
+
+function Message({ msg, accent, msgIndex, highlight, isCurrentMatch }) {
   const isUser = msg.role === 'user';
   return (
-    <div style={{
-      display: 'flex', gap: 12, alignItems: 'flex-start',
-    }}>
+    <div
+      data-msg-index={msgIndex}
+      style={{
+        display: 'flex', gap: 12, alignItems: 'flex-start',
+        outline: isCurrentMatch ? `2px solid ${accent}66` : 'none',
+        outlineOffset: 4, borderRadius: 4,
+        transition: 'outline 150ms',
+      }}>
       <div style={{
         width: 26, height: 26, borderRadius: 6, flexShrink: 0,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -208,7 +347,7 @@ function Message({ msg, accent }) {
           fontSize: 13, lineHeight: 1.55,
           color: isUser ? 'rgba(255,255,255,0.88)' : 'rgba(255,255,255,0.82)',
           whiteSpace: 'pre-wrap', wordBreak: 'break-word',
-        }}>{msg.content}</div>
+        }}>{highlight ? highlightText(msg.content, highlight) : msg.content}</div>
       </div>
     </div>
   );
