@@ -6,6 +6,28 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.2.2] — 2026-04-24
+
+### Added — Ctrl+K command palette
+- **Press Ctrl+K anywhere** (including inside a running claude session)
+  to open a VSCode-style jump-to-session palette. Type a natural-
+  language query — "fix websocket paste bug", "the refactor I did
+  yesterday" — and hit Enter. Debounced 180ms call to the smart-
+  search endpoint; arrow keys navigate; Esc closes. The picked
+  session becomes the left-pane selection and its transcript loads.
+- Regression-guarded by `e2e/tests/feature/command-palette.spec.ts`
+  (network-mocked so it's hermetic).
+
+### Fixed — "Failed to remove temporary directory" dialog (#45)
+- The one-file PyInstaller bootloader's cleanup pass races with
+  pywinpty DLL handles on shutdown, showing a "Failed to remove
+  temporary directory: %TEMP%\\_MEI<pid>" MessageBox. Switched the
+  **installer** build to PyInstaller one-folder mode — AgentManager
+  and its deps live side-by-side, no runtime extraction → no dialog.
+- The raw one-file exe still publishes for the existing auto-update
+  chain so v0.9.x→v1.x clients keep upgrading. Users reinstalling
+  via the installer get the fix immediately.
+
 ## [1.2.1] — 2026-04-24
 
 ### Added — smart search is live in the UI
