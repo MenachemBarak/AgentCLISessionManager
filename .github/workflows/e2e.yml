@@ -37,14 +37,25 @@ jobs:
           npm ci --no-audit --no-fund
           npx playwright install --with-deps chromium
 
-      - name: Run Playwright
+      - name: Run Playwright (chromium)
         working-directory: e2e
         env:
           CI: "1"
           CSV_TEST_MODE: "1"
         # Restrict to the default `chromium` project — the `daemon` project
-        # (ADR-18 / Task #42) is red-by-design until Phases 2-10 land.
+        # runs in its own step below.
         run: npx playwright test --project=chromium
+
+      - name: Run Playwright (daemon — ADR-18)
+        # Guards the 12 ADR-18 daemon invariants that turned green
+        # in PR #75. Uses the dedicated playwright-daemon.config.ts
+        # which spins up `python -m daemon` on 8765 with an isolated
+        # AGENTMANAGER_STATE_DIR tmp. The 8 remaining invariants
+        # carry test.skip() annotations with phase-specific reasons.
+        working-directory: e2e
+        env:
+          CI: "1"
+        run: npx playwright test --config=playwright-daemon.config.ts
 
       - name: Upload Playwright report on failure
         if: failure()
