@@ -592,6 +592,35 @@ function collectSessionIds(terminals) {
 // none of its leaves are resumable (all ad-hoc shells, or a malformed
 // tree). Used to mirror "which session is this tab about?" into the
 // left-pane selected row.
+// Tiny subscription store so the left-pane session list can know which
+// session ids are currently represented by a terminal tab in the right
+// pane (it lives in a sibling component, so sharing by prop-drilling
+// would require lifting RightPane's terminals state up into MainApp).
+// Whenever terminals change, RightPane calls .set(). Any consumer uses
+// useSyncExternalStore to subscribe.
+window._managedSessionsStore = window._managedSessionsStore || (() => {
+  const state = { ids: new Set(), listeners: new Set() };
+  return {
+    set(next) {
+      state.ids = next;
+      state.listeners.forEach((l) => l());
+    },
+    subscribe(l) {
+      state.listeners.add(l);
+      return () => state.listeners.delete(l);
+    },
+    getSnapshot() { return state.ids; },
+  };
+})();
+
+function useManagedSessionIds() {
+  return React.useSyncExternalStore(
+    window._managedSessionsStore.subscribe,
+    window._managedSessionsStore.getSnapshot,
+  );
+}
+window.useManagedSessionIds = useManagedSessionIds;
+
 function firstSessionIdInTree(tree) {
   if (!tree) return null;
   if (tree.kind === 'pane' || (!tree.kind && tree.spawn)) {
@@ -611,6 +640,13 @@ function RightPane({ selected, accent, onOpen, onActiveSessionChange }) {
   // window.splits.makePane / splitNode / closeNode).
   const [terminals, setTerminals] = React.useState([]);
   const [activeId, setActiveId] = React.useState('transcript');
+
+  // Publish the set of session ids currently represented by a tab so
+  // the left-pane session list can hide "Open in manager" for sessions
+  // that are already managed.
+  React.useEffect(() => {
+    window._managedSessionsStore.set(collectSessionIds(terminals));
+  }, [terminals]);
   // focusedPaneId is global across all tabs — only the active tab's
   // ring is visible in practice. Splits act on the focused pane of the
   // active tab.

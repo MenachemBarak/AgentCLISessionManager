@@ -131,6 +131,13 @@ function CompactRow({ session, accent, selected, onSelect, onOpen, onHover, onLe
   const [hover, setHover] = useStateCL(false);
   const ref = useRefCL(null);
   const sid8 = session.id.slice(0, 8);
+  // Is this session already represented by a terminal tab in the right
+  // pane? Read from the shared store published by RightPane. Used below
+  // to hide 'Open in manager' for sessions already managed.
+  const managedIds = window.useManagedSessionIds
+    ? window.useManagedSessionIds()
+    : new Set();
+  const managed = managedIds.has(session.id);
   // When a terminal tab focuses us and `selected` flips on, auto-scroll
   // into view so the user can see what's been highlighted in a long list.
   // Uses `block: 'nearest'` to avoid jarring jumps when the row is already
@@ -208,7 +215,20 @@ function CompactRow({ session, accent, selected, onSelect, onOpen, onHover, onLe
         pointerEvents: hover || selected ? 'auto' : 'none',
       }}>
         {session.active ? (
-          <IconBtn label="Focus" onClick={(e) => { e.stopPropagation(); onOpen(session, 'focus'); }} Icon={IconFocus}/>
+          <>
+            <IconBtn label="Focus" onClick={(e) => { e.stopPropagation(); onOpen(session, 'focus'); }} Icon={IconFocus}/>
+            {/* Active sessions started outside AgentManager (e.g. a claude
+                in a raw PowerShell window) don't have a tab yet. Offer to
+                adopt them into the session manager. Hidden once the
+                session is already managed — opening it again would spawn
+                a second tab for the same sid. */}
+            {!managed && (
+              <IconBtn
+                label="Open in manager"
+                onClick={(e) => { e.stopPropagation(); onOpen(session, 'in-viewer'); }}
+                Icon={IconNewTab}/>
+            )}
+          </>
         ) : (
           <>
             <IconBtn label="New tab" onClick={(e) => { e.stopPropagation(); onOpen(session, 'tab'); }} Icon={IconNewTab}/>
