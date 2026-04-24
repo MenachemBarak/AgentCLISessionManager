@@ -1516,8 +1516,11 @@ async def pty_websocket(websocket: WebSocket) -> None:
             await websocket.send_json({"type": "ready", "id": session.id})
 
         # By here: either `session` was assigned in the reattach branch or in
-        # the spawn-new branch. Either way it's non-None — assert for mypy.
-        assert session is not None
+        # the spawn-new branch. Either way it's non-None; cast for mypy.
+        # (bandit B101 disallows `assert` — cast is the idiomatic narrowing.)
+        from typing import cast
+
+        session = cast(PtySession, session)
         while True:
             msg = await websocket.receive_json()
             t = msg.get("type")
