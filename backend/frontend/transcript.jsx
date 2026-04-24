@@ -2,6 +2,41 @@
 
 const { useState: useStateTx, useEffect: useEffectTx, useRef: useRefTx } = React;
 
+function CopySessionId({ sid }) {
+  const [copied, setCopied] = useStateTx(false);
+  const onClick = async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    try {
+      await navigator.clipboard.writeText(sid);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1200);
+    } catch {
+      // pywebview 5 has clipboard access; fallback for edge cases:
+      const ta = document.createElement('textarea');
+      ta.value = sid;
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand('copy'); setCopied(true); setTimeout(() => setCopied(false), 1200); } catch {}
+      document.body.removeChild(ta);
+    }
+  };
+  return (
+    <button
+      onClick={onClick}
+      data-testid="transcript-copy-id"
+      title="Copy full session ID to clipboard"
+      style={{
+        fontFamily: 'JetBrains Mono, ui-monospace, monospace',
+        fontSize: 10.5, color: copied ? '#4ade80' : 'rgba(255,255,255,0.4)',
+        background: 'transparent', border: 'none', padding: '0 4px',
+        cursor: 'pointer', textAlign: 'left',
+      }}>
+      {copied ? '✓ copied' : sid}
+    </button>
+  );
+}
+
 function Transcript({ session, accent, onOpen }) {
   const scrollRef = useRefTx(null);
   useEffectTx(() => {
@@ -53,10 +88,7 @@ function Transcript({ session, accent, onOpen }) {
             fontFamily: 'JetBrains Mono, ui-monospace, monospace',
             fontSize: 10.5, color: 'rgba(255,255,255,0.3)',
           }}>·</span>
-          <span style={{
-            fontFamily: 'JetBrains Mono, ui-monospace, monospace',
-            fontSize: 10.5, color: 'rgba(255,255,255,0.4)',
-          }}>{session.id}</span>
+          <CopySessionId sid={session.id}/>
           <span style={{ flex: 1 }}/>
           <a
             href={`/api/sessions/${session.id}/transcript.md`}
