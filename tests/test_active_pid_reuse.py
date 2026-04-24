@@ -11,6 +11,7 @@ cross-checks the process's actual `create_time()` against the marker's
 recorded `startedAt`. They use the current process as a stand-in for a
 claude PID (we can trust we can read our own start time).
 """
+
 from __future__ import annotations
 
 import json
@@ -23,16 +24,23 @@ import pytest
 from backend import app as app_mod
 
 
-def _write_marker(active_dir: Path, *, pid: int, started_at_ms: int, sid: str = "00000000-0000-4000-8000-000000000001") -> Path:
+def _write_marker(
+    active_dir: Path, *, pid: int, started_at_ms: int, sid: str = "00000000-0000-4000-8000-000000000001"
+) -> Path:
     """Drop a Claude-Code-style active marker into `active_dir`."""
     active_dir.mkdir(parents=True, exist_ok=True)
     p = active_dir / f"{pid}.json"
-    p.write_text(json.dumps({
-        "pid": pid,
-        "sessionId": sid,
-        "startedAt": started_at_ms,
-        "version": "test",
-    }), encoding="utf-8")
+    p.write_text(
+        json.dumps(
+            {
+                "pid": pid,
+                "sessionId": sid,
+                "startedAt": started_at_ms,
+                "version": "test",
+            }
+        ),
+        encoding="utf-8",
+    )
     return p
 
 
