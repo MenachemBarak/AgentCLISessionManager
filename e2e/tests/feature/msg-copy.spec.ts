@@ -1,14 +1,23 @@
 import { test, expect } from '@playwright/test';
+import { seedEmptyLayout } from '../../helpers/layout-seed';
 
 /**
  * Hover-to-copy message content. Each transcript message shows a
  * small "copy" button on hover; click → writes the message's content
  * to the clipboard; button flashes "✓ copied" for 1.2s.
  */
-// Known flaky in full-suite runs — another test sometimes leaves
-// the transcript in a state where the first session click doesn't
-// paint msg-index=0 in time. Retries absorb the race.
+// Root cause of historical flake: prior tests in the same worker
+// leave terminal tabs active in the persisted layout, which forces
+// activeId away from 'transcript' on reload. Retries still help
+// against rendering jitter on slow CI runners.
 test.describe.configure({ retries: 2 });
+
+test.beforeEach(async ({ request }) => {
+  // Force a known-clean layout so the Transcript tab is the default
+  // active pane when `/` loads. This replaces the #85 workaround
+  // (post-hoc click on right-tab-transcript) with upfront isolation.
+  await seedEmptyLayout(request);
+});
 
 test('hover a transcript message → copy button writes content to clipboard', async ({ page, context, request }) => {
   await context.grantPermissions(['clipboard-read', 'clipboard-write']);
@@ -21,10 +30,9 @@ test('hover a transcript message → copy button writes content to clipboard', a
   await firstRow.waitFor({ state: 'visible' });
   await firstRow.click();
 
-  // A prior test in the same worker may have left a terminal tab active —
-  // clicking a session row updates selectedId but doesn't switch activeId
-  // back to the transcript. Force the transcript tab so data-msg-index
-  // elements actually render.
+  // Defensive: if anything above leaves activeId on a terminal tab,
+  // explicitly switch to Transcript. With seedEmptyLayout this is a
+  // no-op, but it keeps the assertion robust.
   await page.getByTestId('right-tab-transcript').click();
 
   const firstMsg = page.locator('[data-msg-index="0"]');
