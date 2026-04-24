@@ -59,19 +59,45 @@ function PalettePreview({ session }) {
   );
 }
 
+const RECENT_KEY = 'cm_recent_queries';
+const RECENT_MAX = 5;
+
+function loadRecentQueries() {
+  try {
+    const raw = localStorage.getItem(RECENT_KEY);
+    if (!raw) return [];
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? arr.filter((q) => typeof q === 'string' && q.trim()) : [];
+  } catch {
+    return [];
+  }
+}
+
+function pushRecentQuery(q) {
+  const clean = (q || '').trim();
+  if (!clean) return;
+  const current = loadRecentQueries().filter((x) => x !== clean);
+  current.unshift(clean);
+  const next = current.slice(0, RECENT_MAX);
+  try { localStorage.setItem(RECENT_KEY, JSON.stringify(next)); } catch {}
+}
+
 function CommandPalette({ open, onClose, onPick }) {
   const [query, setQuery] = useS('');
   const [items, setItems] = useS([]);
   const [cursor, setCursor] = useS(0);
   const [loading, setLoading] = useS(false);
+  const [recents, setRecents] = useS([]);
   const inputRef = useR(null);
 
-  // Reset state on open; autofocus the input.
+  // Reset state on open; autofocus the input; read recent queries so
+  // an empty query shows the last 5 picks as one-click shortcuts.
   useE(() => {
     if (!open) return;
     setQuery('');
     setItems([]);
     setCursor(0);
+    setRecents(loadRecentQueries());
     // Defer focus to after the modal mounts — WebKit can miss an
     // immediate focus() inside a freshly-painted portal otherwise.
     const t = setTimeout(() => inputRef.current?.focus(), 30);
@@ -132,6 +158,7 @@ function CommandPalette({ open, onClose, onPick }) {
         e.preventDefault();
         const picked = items[cursor];
         if (picked) {
+          pushRecentQuery(query);
           onPick?.(picked);
           onClose?.();
         }
@@ -190,6 +217,44 @@ function CommandPalette({ open, onClose, onPick }) {
             overflowY: 'auto',
             borderRight: items.length > 0 ? '1px solid rgba(255,255,255,0.06)' : 'none',
           }}>
+            {/* Empty query + recent picks → render the recents list. One
+                click on a recent repopulates the input, which kicks the
+                debounced search effect. */}
+            {!query.trim() && recents.length > 0 && (
+              <div data-testid="palette-recents" style={{ padding: '6px 0' }}>
+                <div style={{
+                  padding: '4px 18px 4px',
+                  fontSize: 9.5, letterSpacing: 0.6,
+                  color: 'rgba(255,255,255,0.35)',
+                  textTransform: 'uppercase', fontWeight: 600,
+                  fontFamily: 'JetBrains Mono, monospace',
+                }}>Recent searches</div>
+                {recents.map((q, i) => (
+                  <button key={q + i}
+                    data-testid={`palette-recent-${i}`}
+                    onClick={() => { setQuery(q); inputRef.current?.focus(); }}
+                    style={{
+                      width: '100%', padding: '8px 18px',
+                      display: 'flex', alignItems: 'center', gap: 10,
+                      background: 'transparent',
+                      border: 'none', cursor: 'pointer',
+                      color: 'rgba(255,255,255,0.75)',
+                      fontFamily: 'inherit', fontSize: 12,
+                      textAlign: 'left',
+                    }}>
+                    <span style={{
+                      fontFamily: 'JetBrains Mono, monospace',
+                      fontSize: 9.5, color: 'rgba(255,255,255,0.3)',
+                      minWidth: 18,
+                    }}>↻</span>
+                    <span style={{
+                      flex: 1, overflow: 'hidden',
+                      textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                    }}>{q}</span>
+                  </button>
+                ))}
+              </div>
+            )}
             {query.trim() && items.length === 0 && !loading && (
               <div style={{
                 padding: '22px 18px',
@@ -202,7 +267,7 @@ function CommandPalette({ open, onClose, onPick }) {
                 key={s.id}
                 data-testid={`palette-item-${s.id.slice(0, 8)}`}
                 onMouseEnter={() => setCursor(i)}
-                onClick={() => { onPick?.(s); onClose?.(); }}
+                onClick={() => { pushRecentQuery(query); onPick?.(s); onClose?.(); }}
                 style={{
                   width: '100%', padding: '10px 14px',
                   display: 'flex', alignItems: 'center', gap: 8,

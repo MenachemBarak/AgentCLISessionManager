@@ -110,6 +110,49 @@ test.describe('command palette (Ctrl+K)', () => {
     await expect(page.getByTestId('palette-item-bbbbbbbb')).toBeVisible();
   });
 
+  test('recent queries appear on empty input after a prior pick', async ({ page }) => {
+    await page.route('**/api/search*', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          query: 'x',
+          total: 1,
+          items: [
+            {
+              id: 'eeeeeeee-5555-4555-8555-555555555555',
+              title: 'Recent probe',
+              userLabel: null, claudeTitle: null,
+              firstUserMessages: [], cwd: '', branch: '-',
+              active: false, _score: 1.0, lastActive: 0,
+            },
+          ],
+        }),
+      });
+    });
+
+    await page.goto('/');
+    await expect(page.getByTestId('session-search-input')).toBeVisible({ timeout: 10_000 });
+
+    // Pick once with a known query → writes to localStorage.
+    await page.keyboard.press('Control+k');
+    await page.getByTestId('command-palette-input').fill('my memorable search');
+    await expect(page.getByTestId('palette-item-eeeeeeee')).toBeVisible({ timeout: 3_000 });
+    await page.keyboard.press('Enter');
+    await expect(page.getByTestId('command-palette')).toHaveCount(0);
+
+    // Reopen with empty query → recent search visible + clickable.
+    await page.keyboard.press('Control+k');
+    const recents = page.getByTestId('palette-recents');
+    await expect(recents).toBeVisible();
+    const first = page.getByTestId('palette-recent-0');
+    await expect(first).toContainText('my memorable search');
+
+    // Clicking the recent repopulates the input.
+    await first.click();
+    await expect(page.getByTestId('command-palette-input')).toHaveValue('my memorable search');
+  });
+
   test('Enter picks the highlighted result and closes', async ({ page }) => {
     await page.route('**/api/search*', async (route) => {
       await route.fulfill({
