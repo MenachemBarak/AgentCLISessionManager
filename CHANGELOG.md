@@ -6,6 +6,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.2.1] — 2026-04-24
+
+### Added — smart search is live in the UI
+- **Left-pane search now ranks by relevance** when you type 2+ words.
+  The backend `/api/search` endpoint (v1.2.0) is wired into the list:
+  debounced 250ms, filters active + idle by the returned id set.
+  Single-word / empty queries keep the instant local substring filter
+  so typing latency stays zero. Network failures fall back to local.
+- `e2e/tests/feature/smart-search.spec.ts` — network-interception
+  regression guard so a future refactor can't silently unwire the call.
+
 ## [1.2.0] — 2026-04-24
 
 ### Added — proper Windows installer (task #48)
