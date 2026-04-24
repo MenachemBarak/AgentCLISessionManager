@@ -30,6 +30,39 @@ def test_tokenize_handles_punctuation_and_case():
     assert _tokenize("Hello, World! FooBar.") == ["hello", "world", "foobar"]
 
 
+def test_tokenize_hebrew_is_preserved():
+    """Regression: earlier tokenizer used [A-Za-z0-9_]+ and silently
+    dropped Hebrew/Chinese/accented Latin. Users with non-English
+    sessions got empty results. `\\w+` (unicode-aware in Py3) fixes it."""
+    # Hebrew doesn't hit the stemmer (non-ASCII → no suffix strip).
+    assert _tokenize("פיתוח פלטפורמה") == ["פיתוח", "פלטפורמה"]
+
+
+def test_tokenize_chinese_is_preserved():
+    assert _tokenize("修复 bug") == ["修复", "bug"]
+
+
+def test_tokenize_accented_latin_is_preserved():
+    # café stays intact — stemmer won't touch 4-char tokens.
+    # résumé is 6 chars but ends in "é" not a stem suffix, so unchanged.
+    assert _tokenize("café résumé") == ["café", "résumé"]
+
+
+def test_tokenize_mixed_script_tokenizes_each_run():
+    assert _tokenize("fix the רכב bug") == ["fix", "רכב", "bug"]
+
+
+def test_rank_finds_hebrew_sessions():
+    """End-to-end: searching in Hebrew should return Hebrew-titled sessions."""
+    sessions = [
+        _session("a", title="פיתוח פלטפורמה לניהול סושיאל"),
+        _session("b", title="unrelated English session"),
+    ]
+    result = rank_sessions("פיתוח", sessions)
+    assert len(result) == 1
+    assert result[0]["id"] == "a"
+
+
 def test_tokenize_empty_returns_empty():
     assert _tokenize("") == []
     assert _tokenize("   ") == []
