@@ -58,6 +58,21 @@ function Transcript({ session, accent, onOpen }) {
             fontSize: 10.5, color: 'rgba(255,255,255,0.4)',
           }}>{session.id}</span>
           <span style={{ flex: 1 }}/>
+          <a
+            href={`/api/sessions/${session.id}/transcript.md`}
+            download={`session-${session.id.slice(0, 8)}.md`}
+            data-testid="transcript-export-md"
+            title="Download transcript as Markdown"
+            style={{
+              padding: '3px 8px',
+              background: 'rgba(255,255,255,0.05)',
+              border: '1px solid rgba(255,255,255,0.08)',
+              borderRadius: 4,
+              fontFamily: 'JetBrains Mono, ui-monospace, monospace',
+              fontSize: 10, color: 'rgba(255,255,255,0.65)',
+              textTransform: 'uppercase', letterSpacing: 0.6,
+              textDecoration: 'none', cursor: 'pointer',
+            }}>↓ .md</a>
           <div style={{
             padding: '3px 8px',
             background: 'rgba(255,255,255,0.05)',
