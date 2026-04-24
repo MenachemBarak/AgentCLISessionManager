@@ -134,6 +134,60 @@ jobs:
             dist/AgentManager-*-windows-x64.exe
             dist/claude-sessions-viewer-*-windows-x64.exe
 
+      # ADR-18 / Task #48: build a real Windows installer (Inno Setup)
+      # alongside the raw exe. Gives users Add/Remove Programs entry,
+      # standard install UX, and a clean uninstall path via the existing
+      # --uninstall CLI. The raw exe stays published for the existing
+      # auto-update chain (drop-in swap helper).
+      - name: Install Inno Setup
+        shell: pwsh
+        run: |
+          # Inno Setup 6 is preinstalled on windows-latest under
+          # "C:\Program Files (x86)\Inno Setup 6\iscc.exe" on GHA images.
+          # Fall back to choco if absent.
+          $iscc = Get-Command iscc.exe -ErrorAction SilentlyContinue
+          if (-not $iscc) {
+            $cand = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+            if (Test-Path $cand) {
+              $dir = Split-Path $cand
+              Add-Content -Path $env:GITHUB_PATH -Value $dir
+            } else {
+              choco install innosetup --version=6.2.2 -y --no-progress
+            }
+          }
+      - name: Build installer
+        shell: bash
+        run: |
+          VER="${{ needs.build.outputs.version }}"
+          EXE="dist/AgentManager-${VER}-windows-x64.exe"
+          mkdir -p installer/Output
+          iscc /Qp \
+            "/DMyAppVersion=${VER}" \
+            "/DMyExeSource=../${EXE}" \
+            installer/agentmanager.iss
+          ls -la installer/Output/
+      - name: Smoke-test installer (silent + uninstall)
+        shell: pwsh
+        run: |
+          $ver = "${{ needs.build.outputs.version }}"
+          $setup = "installer/Output/AgentManager-$ver-setup.exe"
+          Write-Host "Running silent install: $setup /VERYSILENT /SUPPRESSMSGBOXES /NORESTART"
+          Start-Process -Wait -FilePath $setup -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART"
+          $installed = "$env:LOCALAPPDATA\Programs\AgentManager\AgentManager.exe"
+          if (-not (Test-Path $installed)) { throw "installer did not place exe at $installed" }
+          & $installed --version
+          # Uninstall via the registered uninstaller.
+          $unins = "$env:LOCALAPPDATA\Programs\AgentManager\unins000.exe"
+          if (Test-Path $unins) {
+            Write-Host "Running silent uninstall"
+            Start-Process -Wait -FilePath $unins -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART"
+          }
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: installer/Output/AgentManager-*-setup.exe
+
   verify:
     name: Verify built wheel installs and runs
     needs: build
@@ -198,6 +252,11 @@ jobs:
         with:
           name: windows-exe
           path: dist
+      - name: Download Windows installer artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-installer
+          path: dist
       - name: Extract changelog entry for this version
         id: changelog
         run: |
@@ -238,4 +297,5 @@ jobs:
             dist/claude_sessions_viewer-*.tar.gz \
             dist/claude-sessions-viewer-*-windows.zip \
             dist/AgentManager-*-windows-x64.exe \
-            dist/claude-sessions-viewer-*-windows-x64.exe
+            dist/claude-sessions-viewer-*-windows-x64.exe \
+            dist/AgentManager-*-setup.exe
