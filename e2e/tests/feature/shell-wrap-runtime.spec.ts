@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import type { APIRequestContext } from '@playwright/test';
+import { seedEmptyLayout } from '../../helpers/layout-seed';
 
 /**
  * Runtime proof that v1.1.0's shell-wrap actually types the claude
@@ -11,6 +12,14 @@ import type { APIRequestContext } from '@playwright/test';
  * the command AND the separate `\r` frame.
  */
 test.describe.configure({ mode: 'serial' });
+
+test.beforeEach(async ({ request }) => {
+  // Clear any leftover tabs from prior specs so our WS interception
+  // only sees frames from OUR seed below. A stray terminal left over
+  // would spawn its own PTY, generate unrelated input frames, and race
+  // with ours — producing 15 s timeouts on loaded CI runners.
+  await seedEmptyLayout(request);
+});
 
 const AUTO_SID = '55555555-5555-4555-8555-555555555555';
 
@@ -71,7 +80,7 @@ test('shell-wrap tab types chunked claude command into PTY then Enter', async ({
   await expect.poll(() => {
     const joined = sentInputs.join('');
     return joined.includes(expected);
-  }, { timeout: 15_000, message: `never saw full command in captured inputs. Got: ${JSON.stringify(sentInputs)}` }).toBe(true);
+  }, { timeout: 25_000, message: `never saw full command in captured inputs. Got: ${JSON.stringify(sentInputs)}` }).toBe(true);
 
   // Confirm Enter was a SEPARATE frame (not concatenated). There must
   // be at least one input frame containing ONLY `\r`, sent AFTER the
