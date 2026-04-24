@@ -6,6 +6,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.2.5] — 2026-04-24
+
+### Added — export session to markdown
+- New **↓ .md** button in the transcript header. Click to download
+  `session-<short-id>.md` — a shareable markdown file with title +
+  metadata block (cwd, branch, model, created) + every user /
+  assistant message under its own heading with ISO-8601 timestamps.
+- Backed by `GET /api/sessions/{sid}/transcript.md` (auth-gated in
+  daemon mode; `?limit=N` caps runaway exports; default 5000).
+
 ## [1.2.4] — 2026-04-24
 
 ### Added — recent searches in Ctrl+K
