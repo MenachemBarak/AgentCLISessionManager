@@ -6,6 +6,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.2.3] — 2026-04-24
+
+### Added — Ctrl+K preview pane
+- When arrowing through palette results, a right-hand preview pane
+  now shows the highlighted session's first user messages + cwd +
+  branch + last-active time + relevance score. Makes Ctrl+K a
+  proper preview-while-browsing tool — no need to Enter before
+  seeing what a result is about. Palette widens to 900px.
+
+### Fixed — Hebrew / Chinese / accented Latin in search
+- Tokenizer used `[A-Za-z0-9_]+` which silently dropped every non-
+  ASCII character. If you have Hebrew session titles, searching in
+  Hebrew returned zero results. Switched to unicode-aware `\\w+`
+  and guarded the English stemmer on `.isascii()` so it doesn't
+  maul non-Latin words.
+
 ## [1.2.2] — 2026-04-24
 
 ### Added — Ctrl+K command palette
