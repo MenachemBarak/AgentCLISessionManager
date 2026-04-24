@@ -698,6 +698,83 @@ function CompactList({ sessions, accent, selectedId, onSelect, sort, setSort, qu
   }, [sessions, query, smartIds, dateRange, folderFilter, sort]);
   const idleGroups = useMemoCL(() => groupByCwd(idle), [idle]);
 
+  // Flat ordered list of visible session IDs in DOM order — powers
+  // keyboard navigation (↑/↓). Active section first, then each cwd
+  // group in its sort order.
+  const visibleIds = useMemoCL(() => {
+    const out = [];
+    if (statusFilter !== 'idle') for (const s of active) out.push(s.id);
+    if (statusFilter !== 'active') {
+      for (const [, list] of idleGroups) for (const s of list) out.push(s.id);
+    }
+    return out;
+  }, [active, idleGroups, statusFilter]);
+
+  // Global keyboard nav:
+  //   ↑ / ↓    — move selection (within visibleIds)
+  //   Enter    — same as a click (onSelect)
+  //   /        — focus the search input
+  //   Esc      — clear search if focused, else blur
+  // Ignored when a text input / contenteditable / xterm has focus so
+  // typing a session name doesn't accidentally scroll the list.
+  React.useEffect(() => {
+    const onKey = (e) => {
+      // Let the Ctrl+K palette and the intra-input editing work.
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      const ae = document.activeElement;
+      const tag = ae?.tagName;
+      const inTextInput =
+        tag === 'INPUT' || tag === 'TEXTAREA' || ae?.isContentEditable;
+      const inXterm = !!ae?.closest?.('.xterm');
+      if (inXterm) return;
+
+      if (e.key === '/') {
+        if (inTextInput) return;
+        const input = document.querySelector('[data-testid="session-search-input"]');
+        if (input) {
+          e.preventDefault();
+          input.focus();
+          input.select?.();
+        }
+        return;
+      }
+      if (e.key === 'Escape') {
+        const input = document.querySelector('[data-testid="session-search-input"]');
+        if (ae === input) {
+          e.preventDefault();
+          if (input.value) {
+            // React controlled input — dispatch input event so setQuery fires.
+            const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+            setter.call(input, '');
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+          } else {
+            input.blur();
+          }
+        }
+        return;
+      }
+      if (inTextInput) return;
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        if (visibleIds.length === 0) return;
+        e.preventDefault();
+        const i = selectedId ? visibleIds.indexOf(selectedId) : -1;
+        const dir = e.key === 'ArrowDown' ? 1 : -1;
+        const nextIdx = Math.max(0, Math.min(visibleIds.length - 1, (i < 0 ? 0 : i + dir)));
+        const nextId = visibleIds[nextIdx];
+        const s = sessions.find((x) => x.id === nextId);
+        if (s) onSelect(s);
+        return;
+      }
+      if (e.key === 'Enter') {
+        if (inTextInput) return;
+        const s = sessions.find((x) => x.id === selectedId);
+        if (s) onSelect(s);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [visibleIds, selectedId, onSelect, sessions]);
+
   return (
     <aside style={{
       width: '25%', minWidth: 320, maxWidth: 420,
