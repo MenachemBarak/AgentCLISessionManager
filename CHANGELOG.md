@@ -6,6 +6,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.2.10] — 2026-04-24
+
+### Added — `?` keyboard-shortcut help overlay
+- **Press `?`** (Shift + /) anywhere except inside a text input or
+  terminal to pop a grouped overlay listing every keyboard shortcut
+  AgentManager ships — Ctrl+K command palette, Ctrl+F find in
+  transcript, ↑/↓ nav, `/` focus search, Esc close, pin ★, markdown
+  export, copy id, copy message. Esc or click-outside closes.
+- Every shortcut we've shipped in v1.2.0 → v1.2.9 was previously
+  invisible to new users. Now discoverable.
+
 ## [1.2.9] — 2026-04-24
 
 ### Added — copy any transcript message
