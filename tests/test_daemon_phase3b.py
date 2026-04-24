@@ -22,7 +22,9 @@ def _free_loopback_port() -> int:
         return int(s.getsockname()[1])
 
 
-def _start_fake_server(port: int, health_body: bytes | None = b'{"ok":true,"daemonVersion":"1.2.3"}') -> threading.Thread:
+def _start_fake_server(
+    port: int, health_body: bytes | None = b'{"ok":true,"daemonVersion":"1.2.3"}'
+) -> threading.Thread:
     """Tiny in-process HTTP server on the given port. If health_body is
     None, the server answers 404 instead of returning the health JSON —
     simulates "port held but not our daemon"."""

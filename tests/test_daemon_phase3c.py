@@ -76,7 +76,9 @@ def test_daemon_mode_ours_skips_spawn(monkeypatch, fake_webview):
     """When probe returns 'ours', launcher connects without spawning."""
     spawned: list[list[str]] = []
 
-    monkeypatch.setattr("daemon.launcher.probe", lambda port=8765: {"state": "ours", "daemonVersion": "1.2.0"})
+    monkeypatch.setattr(
+        "daemon.launcher.probe", lambda port=8765: {"state": "ours", "daemonVersion": "1.2.0"}
+    )
     monkeypatch.setattr("daemon.launcher.spawn_detached", lambda argv, env=None: spawned.append(argv) or 0)
     monkeypatch.setattr("daemon.launcher.wait_for_health", lambda port=8765, timeout=15.0: True)
     monkeypatch.setattr("daemon.bootstrap.read_or_create_token", lambda: "feedface" * 8)

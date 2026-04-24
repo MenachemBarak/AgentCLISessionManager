@@ -59,6 +59,7 @@ def test_pid_lock_acquires_and_releases(isolated_state):
     with acquire_singleton_pid("1.2.0") as path:
         assert path == pid_file()
         import json
+
         entry = json.loads(path.read_text(encoding="utf-8"))
         assert entry["pid"] == os.getpid()
         assert entry["daemonVersion"] == "1.2.0"
@@ -70,6 +71,7 @@ def test_pid_lock_acquires_and_releases(isolated_state):
 def test_pid_lock_refuses_when_live_daemon_present(isolated_state, monkeypatch):
     """Seed a pid file claiming our own pid — liveness check says alive — refuse."""
     import json
+
     entry = {"pid": os.getpid(), "startTimeEpoch": 1, "daemonVersion": "0.0.1"}
     pid_file().write_text(json.dumps(entry), encoding="utf-8")
     # Our real pid IS alive (we're running), so acquire must refuse even
@@ -80,6 +82,7 @@ def test_pid_lock_refuses_when_live_daemon_present(isolated_state, monkeypatch):
 
     def _pretend_alive(_pid):
         return True
+
     monkeypatch.setattr("daemon.bootstrap._pid_alive", _pretend_alive)
 
     with pytest.raises(DaemonAlreadyRunning):
@@ -90,6 +93,7 @@ def test_pid_lock_refuses_when_live_daemon_present(isolated_state, monkeypatch):
 def test_pid_lock_overwrites_stale_entry(isolated_state):
     """Dead pid in the file — acquire should succeed and overwrite."""
     import json
+
     # Write a bogus pid that's definitely not alive (negative won't work on
     # Windows; use a huge unlikely value and check it's not alive).
     entry = {"pid": 4_000_000_000, "startTimeEpoch": 1, "daemonVersion": "0.0.1"}
