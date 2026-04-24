@@ -15,7 +15,7 @@ function CompactSearch({ value, onChange }) {
       <IconSearch size={12} stroke={1.8}/>
       <input value={value} onChange={(e) => onChange(e.target.value)}
         data-testid="session-search-input"
-        placeholder="Search sessions…"
+        placeholder="Search sessions…  (press /)"
         style={{
           flex: 1, background: 'transparent', border: 'none', outline: 'none',
           color: 'rgba(255,255,255,0.92)', fontFamily: 'inherit', fontSize: 12,
