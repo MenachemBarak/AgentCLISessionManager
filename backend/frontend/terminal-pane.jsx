@@ -61,11 +61,13 @@ const RESTART_PING_TEXT =
 // user has been actively working with. Matching a distinctive fragment
 // of the prompt ensures we don't false-trigger on stray output.
 const RESUME_PROMPT_MARKER = 'Resume full session as-is';
-// Down-arrow + Enter moves from option 1 to option 2 and confirms. Plain
-// "2\r" also works in most Ink-TUI builds, but arrow+enter is the
-// universally-accepted navigation that matches what Claude Code's own
-// docs demonstrate.
-const RESUME_PROMPT_PICK_FULL = '\x1b[B\r';
+// Prefer a single digit keystroke over arrow+enter. Claude Code's select
+// component (Ink's `C6`) accepts `2` as a one-keystroke pick for option 2
+// — no Enter needed, no ESC sequence to get eaten by Ink's bracketed-paste
+// detector. The v1.0.0 → v1.1.0 fixes tried increasingly elaborate
+// arrow+enter schemes to beat the paste detector; the digit bypasses the
+// paste detector entirely. See playgrounds/ research 2026-04-24.
+const RESUME_PROMPT_PICK_FULL = '2';
 // Dedupe across re-renders of the same pane: once a session has been
 // auto-answered this boot, any later output still showing the prompt
 // text (e.g. scrollback) shouldn't re-send.
@@ -269,9 +271,13 @@ function TerminalPane({ spawn, onExit, onReady, className, paneId }) {
           const data = msg.data || '';
           term.write(data);
           // Auto-select "Resume full session as-is" if Claude Code asks.
-          // Default cursor is on option 1 (summary); we send down-arrow +
-          // Enter to pick option 2. Deduped per sessionId per viewer boot.
-          const sid = spawn?.sessionId;
+          // Send digit `2` — Ink's select component takes that as a
+          // one-keystroke pick for the 2nd option. Deduped per sessionId
+          // per viewer boot. Supports both the legacy spawn shape
+          // (spawn.sessionId) and v1.1.0 shell-wrap (spawn._autoResume.
+          // sessionId) so the auto-pick fires regardless of which path
+          // seeded the pane.
+          const sid = spawn?._autoResume?.sessionId || spawn?.sessionId;
           if (
             sid
             && typeof data === 'string'
@@ -282,21 +288,10 @@ function TerminalPane({ spawn, onExit, onReady, className, paneId }) {
             // Small delay so the prompt is fully rendered before we
             // answer — firing input before Ink finishes laying out the
             // options can be dropped.
-            // Split the keystrokes: cursor-down first, 200ms, then Enter
-            // as a separate frame. If we send both in one paste, Ink's
-            // bracketed-paste detection eats the arrow sequence and the
-            // Enter picks the default (option 1, summary) — which is the
-            // exact wrong choice. Proven in v1.0.0 where a user's
-            // session got compacted instead of continued.
             setTimeout(() => {
               if (disposedRef.current) return;
               if (!ws || ws.readyState !== WebSocket.OPEN) return;
-              send({ type: 'input', data: '\x1b[B' });
-              setTimeout(() => {
-                if (disposedRef.current) return;
-                if (!ws || ws.readyState !== WebSocket.OPEN) return;
-                send({ type: 'input', data: '\r' });
-              }, 200);
+              send({ type: 'input', data: RESUME_PROMPT_PICK_FULL });
             }, 400);
           }
           break;

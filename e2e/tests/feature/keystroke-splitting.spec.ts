@@ -53,19 +53,21 @@ test('restart-ping splits text + Enter into separate WS frames (v1.0.1 regressio
     .toMatch(/send\(\s*\{\s*type:\s*['"]input['"]\s*,\s*data:\s*['"]\\r['"]\s*\}\s*\)/);
 });
 
-test('resume-prompt auto-pick splits arrow + Enter into separate WS frames (v1.0.1 regression guard)', async ({ request }) => {
+test('resume-prompt auto-pick uses one-keystroke digit pick (post-v1.2.14)', async ({ request }) => {
   const r = await request.get('/terminal-pane.jsx');
   const src = await r.text();
 
-  // The v0.9.10 bug: `\x1b[B\r` in a single string → Ink-TUI paste,
-  // arrow eaten, Enter picked option 1 (summary). Must be two
-  // separate sends.
+  // Regression guard: the concatenated arrow+enter payload must stay
+  // absent. That was the v1.0.0 bug where Ink's bracketed-paste
+  // detector ate the arrow and Enter picked option 1 (summary).
   expect(
     src,
-    'auto-pick regressed: \\x1b[B\\r appears as one payload. Arrow and Enter must be separate send() calls.',
+    'auto-pick regressed: \\x1b[B\\r appears as one payload.',
   ).not.toMatch(/data:\s*['"]\\x1b\[B\\r['"]/);
 
-  // Correct pattern: send arrow alone, send Enter alone.
-  expect(src, 'auto-pick must send arrow-down (\\x1b[B) on its own')
-    .toMatch(/data:\s*['"]\\x1b\[B['"]/);
+  // Current approach (post-v1.2.14): one-keystroke digit pick `'2'`.
+  // Ink's select component accepts a digit as an immediate pick; no
+  // ESC sequence for the paste detector to swallow.
+  expect(src, 'RESUME_PROMPT_PICK_FULL must be the digit "2"')
+    .toMatch(/RESUME_PROMPT_PICK_FULL\s*=\s*'2'/);
 });
