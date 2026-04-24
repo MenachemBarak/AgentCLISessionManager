@@ -2,7 +2,7 @@ fastapi==0.136.0
 # Starlette is a transitive dep via fastapi; pin floor to mitigate
 # GHSA-f96h-pmfr-66vw and GHSA-2c2j-9gv5-cj73 (both fixed in 0.40.0 / 0.47.2).
 starlette>=0.48.0
-uvicorn[standard]==0.32.0
+uvicorn[standard]==0.44.0
 watchdog==5.0.3
 psutil==6.1.0
 sse-starlette==3.3.4
