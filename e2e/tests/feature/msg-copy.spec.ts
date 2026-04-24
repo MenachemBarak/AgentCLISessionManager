@@ -21,6 +21,12 @@ test('hover a transcript message → copy button writes content to clipboard', a
   await firstRow.waitFor({ state: 'visible' });
   await firstRow.click();
 
+  // A prior test in the same worker may have left a terminal tab active —
+  // clicking a session row updates selectedId but doesn't switch activeId
+  // back to the transcript. Force the transcript tab so data-msg-index
+  // elements actually render.
+  await page.getByTestId('right-tab-transcript').click();
+
   const firstMsg = page.locator('[data-msg-index="0"]');
   await firstMsg.waitFor({ state: 'visible', timeout: 5_000 });
 
