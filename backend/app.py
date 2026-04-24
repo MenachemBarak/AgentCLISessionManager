@@ -864,6 +864,17 @@ def session_move_execute(sid: str, req: SessionMoveExecuteReq) -> dict[str, Any]
             except OSError:
                 # Watcher will pick it up on the next observation tick.
                 pass
+        # Defence in depth: if the eager re-scan missed the session for
+        # any reason (edge case in path handling, file not yet flushed,
+        # etc.), fall through to a full rescan so /api/sessions is
+        # guaranteed correct on the very next call. This fixes the
+        # long-running test flake where `execute_move` succeeded on
+        # disk but the session briefly vanished from the index.
+        if sid not in _INDEX:
+            try:
+                build_index()
+            except Exception:  # noqa: BLE001 — best-effort; we already succeeded on disk
+                pass
     return result
 
 
