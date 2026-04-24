@@ -1434,6 +1434,7 @@ async def pty_websocket(websocket: WebSocket) -> None:
     """
     await websocket.accept()
     session: PtySession | None = None
+    reattached = False  # True when we hooked onto a pre-existing PTY
     loop = asyncio.get_running_loop()
     try:
         first = await websocket.receive_json()
@@ -1442,8 +1443,32 @@ async def pty_websocket(websocket: WebSocket) -> None:
             await websocket.close()
             return
 
+        # ─── ADR-18 Phase 5: reattach-by-id ─────────────────────────
+        # If the client sends `{"type":"spawn","ptyId":"<id>"}`, try to
+        # hook onto that existing PTY instead of spawning a new one.
+        # Used by the UI on WS reconnect after a restart — the daemon
+        # kept the PTY alive and has a ring buffer we can replay.
+        reattach_id = first.get("ptyId")
+        if isinstance(reattach_id, str) and reattach_id:
+            existing = _pty_manager.get(reattach_id)
+            if existing is None:
+                await websocket.send_json({"type": "error", "message": f"ptyId {reattach_id!r} not found"})
+                await websocket.close()
+                return
+            session = existing
+            reattached = True
+            # Replay the ring buffer as a single batched frame BEFORE we
+            # rewire the live callback — otherwise late chunks during
+            # rewire may leapfrog the replay.
+            replay = session.ring_buffer.read_all().decode("utf-8", errors="replace")
+            if replay:
+                await websocket.send_json({"type": "output", "data": replay, "replay": True})
+            bridge_pty_to_websocket(session, websocket.send_json, loop)
+            await websocket.send_json({"type": "ready", "id": session.id, "reattached": True})
+            # Skip the spawn branch below — jump to the input/resize loop.
+
         try:
-            cmd = _resolve_pty_command(first)
+            cmd = _resolve_pty_command(first) if not reattached else []
         except ValueError as e:
             # Rejected by the whitelist / unknown provider — tell the client,
             # then close. Dropping silently would leave the JS receive loop
@@ -1452,43 +1477,50 @@ async def pty_websocket(websocket: WebSocket) -> None:
             await websocket.close()
             return
 
-        cols = int(first.get("cols", 80))
-        rows = int(first.get("rows", 24))
+        if not reattached:
+            cols = int(first.get("cols", 80))
+            rows = int(first.get("rows", 24))
 
-        # cwd comes from the session row (for resume spawns) or nothing (for
-        # ad-hoc shells). Pin down a safe value:
-        #   1. If the client passed a cwd that exists as a directory, use it.
-        #   2. If it passed a cwd that no longer exists (project was moved /
-        #      deleted), fall back to the user's home directory rather than
-        #      let pywinpty fail mid-spawn with a cryptic error.
-        #   3. If nothing was passed, pywinpty inherits this process's cwd.
-        cwd_raw = first.get("cwd")
-        cwd: str | None = None
-        if isinstance(cwd_raw, str) and cwd_raw:
-            try:
-                cwd_path = Path(cwd_raw).resolve(strict=False)
-                if cwd_path.is_dir():
-                    cwd = str(cwd_path)
-                else:
+            # cwd comes from the session row (for resume spawns) or nothing (for
+            # ad-hoc shells). Pin down a safe value:
+            #   1. If the client passed a cwd that exists as a directory, use it.
+            #   2. If it passed a cwd that no longer exists (project was moved /
+            #      deleted), fall back to the user's home directory rather than
+            #      let pywinpty fail mid-spawn with a cryptic error.
+            #   3. If nothing was passed, pywinpty inherits this process's cwd.
+            cwd_raw = first.get("cwd")
+            cwd: str | None = None
+            if isinstance(cwd_raw, str) and cwd_raw:
+                try:
+                    cwd_path = Path(cwd_raw).resolve(strict=False)
+                    if cwd_path.is_dir():
+                        cwd = str(cwd_path)
+                    else:
+                        cwd = str(Path.home())
+                except (OSError, ValueError):
                     cwd = str(Path.home())
-            except (OSError, ValueError):
-                cwd = str(Path.home())
 
-        session = PtySession(cmd=cmd, cols=cols, rows=rows, cwd=cwd)
-        # Wire output/exit BEFORE starting the PTY — the first chunk (ConPTY
-        # init escapes) can arrive within microseconds; assigning callbacks
-        # post-spawn would race and drop that frame.
-        bridge_pty_to_websocket(session, websocket.send_json, loop)
-        try:
-            session.spawn()
-        except Exception as e:  # noqa: BLE001 — report to client and close
-            await websocket.send_json({"type": "error", "message": f"spawn failed: {e}"})
-            await websocket.close()
-            return
+            session = PtySession(cmd=cmd, cols=cols, rows=rows, cwd=cwd)
+            # Wire output/exit BEFORE starting the PTY — the first chunk (ConPTY
+            # init escapes) can arrive within microseconds; assigning callbacks
+            # post-spawn would race and drop that frame.
+            bridge_pty_to_websocket(session, websocket.send_json, loop)
+            try:
+                session.spawn()
+            except Exception as e:  # noqa: BLE001 — report to client and close
+                await websocket.send_json({"type": "error", "message": f"spawn failed: {e}"})
+                await websocket.close()
+                return
 
-        _pty_manager.add(session)
-        await websocket.send_json({"type": "ready", "id": session.id})
+            _pty_manager.add(session)
+            await websocket.send_json({"type": "ready", "id": session.id})
 
+        # By here: either `session` was assigned in the reattach branch or in
+        # the spawn-new branch. Either way it's non-None; cast for mypy.
+        # (bandit B101 disallows `assert` — cast is the idiomatic narrowing.)
+        from typing import cast
+
+        session = cast(PtySession, session)
         while True:
             msg = await websocket.receive_json()
             t = msg.get("type")
@@ -1504,7 +1536,10 @@ async def pty_websocket(websocket: WebSocket) -> None:
     except Exception:  # noqa: BLE001
         pass
     finally:
-        if session is not None:
+        # Phase 5: when we reattached to an existing PTY, the PTY must
+        # OUTLIVE this WS so a future client can reattach again. Only
+        # spawn-new sessions get torn down on WS close.
+        if session is not None and not reattached:
             _pty_manager.remove(session.id)
             session.close()
 
