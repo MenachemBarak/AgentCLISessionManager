@@ -6,6 +6,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.2.8] — 2026-04-24
+
+### Fixed — session-move reliability
+- After `/api/sessions/{sid}/move/execute`, a session could briefly
+  vanish from `/api/sessions` (old entry evicted, new entry not yet
+  scanned) until the watchdog caught up 0-500ms later. The move
+  handler now falls through to a full `build_index()` if the eager
+  re-scan misses the session, so `/api/sessions` is always correct
+  on the very next call.
+- E2E timeout increased from 15s → 30s on the SSE watchdog tests
+  (`sse-live-updates`) to tolerate slow Windows CI runners on
+  filesystem-notification propagation. Does not mask regressions.
+
 ## [1.2.7] — 2026-04-24
 
 ### Added — keyboard navigation in the session list
