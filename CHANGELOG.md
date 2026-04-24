@@ -6,6 +6,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.2.9] — 2026-04-24
+
+### Added — copy any transcript message
+- Hover over any user or assistant message in the transcript →
+  a small **copy** button appears in the top-right → click to
+  copy just that message's content to clipboard (flashes
+  `✓ copied` green for 1.2s). Handy for quoting a Claude reply
+  into a docs PR or an issue comment.
+
 ## [1.2.8] — 2026-04-24
 
 ### Fixed — session-move reliability
