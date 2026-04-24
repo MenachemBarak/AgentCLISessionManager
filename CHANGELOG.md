@@ -6,6 +6,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.2.11] — 2026-04-24
+
+### Added — filter-state visibility in the session list footer
+- **Footer shows `showing N of M`** in amber when any filter (search,
+  date range, status, folder) is hiding rows. Falls back to the plain
+  `N total` white text when everything's visible — so you can tell
+  at a glance when you're looking at a subset.
+- **One-click `clear` chip** next to the count when filters are
+  active. Resets search + date + status + folder filters (re-checks
+  every folder) in one shot, so you don't hunt through four
+  controls to find the one hiding your stuff.
+
 ## [1.2.10] — 2026-04-24
 
 ### Added — `?` keyboard-shortcut help overlay
