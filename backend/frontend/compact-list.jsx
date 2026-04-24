@@ -840,7 +840,9 @@ function CompactList({ sessions, accent, selectedId, onSelect, sort, setSort, qu
         )}
       </div>
 
-      {/* status footer */}
+      {/* status footer — when filters are active, show a "showing X of Y"
+          summary so the user can see at a glance when results are being
+          hidden (e.g. by a stale search or folder-filter toggle). */}
       <div style={{
         padding: '8px 14px',
         borderTop: '1px solid rgba(255,255,255,0.06)',
@@ -851,7 +853,18 @@ function CompactList({ sessions, accent, selectedId, onSelect, sort, setSort, qu
         <PulseDot color="#4ade80"/>
         <span>~/.claude/sessions</span>
         <span style={{ flex: 1 }}/>
-        <span>{sessions.length} total</span>
+        {(() => {
+          const visible = active.length + idle.length;
+          const total = sessions.length;
+          const filtering = visible < total;
+          return (
+            <span data-testid="session-count-footer" style={{
+              color: filtering ? 'rgba(215, 162, 74, 0.85)' : 'rgba(255,255,255,0.4)',
+            }}>
+              {filtering ? `showing ${visible} of ${total}` : `${total} total`}
+            </span>
+          );
+        })()}
       </div>
     </aside>
   );
