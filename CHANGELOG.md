@@ -6,6 +6,36 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.2.17] — 2026-04-25
+
+### Fixed — closing a pane no longer tears down the whole tab (#98)
+- Discovered while adding e2e coverage for close-pane-btn (previously
+  zero coverage). Reproduced deterministically: open terminal → split
+  → close → the whole tab vanished instead of collapsing to the
+  sibling.
+- Root cause: the v1.2.15/v1.2.16 portal refactor imperatively moves
+  each TerminalPane's wrapper div into its matching tile-pane-slot
+  via appendChild. When React later unmounts the component on close,
+  its cleanup does removeChild on the wrapper's *original* React-
+  managed parent. Since the wrapper had been moved into the slot,
+  the removeChild call threw NotFoundError. React propagated the
+  error and unmounted the entire sibling subtree → tab "closed
+  itself".
+- Fix: capture the wrapper's original parent on first mount; in a
+  useLayoutEffect cleanup (synchronous during commit, before React's
+  DOM mutation phase) restore the wrapper there whenever it has
+  drifted. React's removeChild then finds it and cleans up cleanly.
+- Regression test `close-pane.spec.ts` covers split-close + only-pane
+  close + asserts no `removeChild` pageerror.
+
+### Tests (T-63 audit)
+- `row-action-buttons.spec.ts` — 'In viewer' click spawns shell-wrap
+  tab with correct `_autoResume.sessionId` (#99).
+- `row-action-external-modes.spec.ts` — 'New tab' / 'Split' POST
+  `/api/open` with the right `mode` and session id (#100).
+- `tile-divider-drag.spec.ts` — root-divider drag persists a non-
+  default `tree.ratio` (#101).
+
 ## [1.2.16] — 2026-04-24
 
 ### Fixed — blank pane caused by pane-id collisions (#96)
@@ -907,7 +937,8 @@ agent-CLI support. Existing endpoints and UI work identically.
   - "New tab" / "Split" buttons spawn `wt.exe ... claude --resume <uuid>`
   - Self-installing Desktop shortcut launcher
 
-[Unreleased]: https://github.com/MenachemBarak/AgentCLISessionManager/compare/v1.2.16...HEAD
+[Unreleased]: https://github.com/MenachemBarak/AgentCLISessionManager/compare/v1.2.17...HEAD
+[1.2.17]: https://github.com/MenachemBarak/AgentCLISessionManager/releases/tag/v1.2.17
 [1.2.16]: https://github.com/MenachemBarak/AgentCLISessionManager/releases/tag/v1.2.16
 [1.2.15]: https://github.com/MenachemBarak/AgentCLISessionManager/releases/tag/v1.2.15
 [1.2.14]: https://github.com/MenachemBarak/AgentCLISessionManager/releases/tag/v1.2.14
