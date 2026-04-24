@@ -832,6 +832,89 @@ def session_preview(session_id: str) -> dict[str, Any]:
     return deep
 
 
+@app.get("/api/sessions/{session_id}/transcript.md")
+def session_transcript_markdown(session_id: str, limit: int = 5000) -> Any:
+    """Export a session as a markdown file the user can save / share.
+
+    Title line uses the friendliest name available (userLabel →
+    claudeTitle → first user message → sid). Metadata block follows.
+    Each message rendered as `### user` / `### assistant` + ISO-8601
+    timestamp + content verbatim. Served with a Content-Disposition
+    header so browsers offer "save as" instead of rendering inline.
+    """
+    from datetime import datetime, timezone
+
+    from starlette.responses import PlainTextResponse
+
+    meta = _INDEX.get(session_id)
+    if not meta:
+        raise HTTPException(404, "not found")
+    path = Path(meta["path"])
+    title = (
+        _get_user_label(session_id)
+        or meta.get("claudeTitle")
+        or meta.get("title")
+        or f"Session {session_id[:8]}"
+    )
+    lines: list[str] = [
+        f"# {title}",
+        "",
+        f"- **Session ID**: `{session_id}`",
+    ]
+    if meta.get("cwd"):
+        lines.append(f"- **cwd**: `{meta['cwd']}`")
+    if meta.get("branch") and meta["branch"] != "-":
+        lines.append(f"- **branch**: `{meta['branch']}`")
+    if meta.get("model"):
+        lines.append(f"- **model**: `{meta['model']}`")
+    if meta.get("createdAt"):
+        try:
+            lines.append(
+                f"- **created**: {datetime.fromtimestamp(meta['createdAt'] / 1000, tz=timezone.utc).isoformat()}"
+            )
+        except (OSError, ValueError):
+            pass
+    lines.append("")
+    lines.append("---")
+    lines.append("")
+
+    msg_count = 0
+    for obj in _iter_lines(path):
+        t = obj.get("type")
+        if t not in ("user", "assistant"):
+            continue
+        if _is_meta(obj):
+            continue
+        msg = obj.get("message") or {}
+        text = _extract_text(msg.get("content"))
+        if not text:
+            continue
+        ts_iso = ""
+        ts_raw = obj.get("timestamp")
+        if ts_raw:
+            try:
+                ts_iso = datetime.fromisoformat(ts_raw.replace("Z", "+00:00")).isoformat()
+            except (OSError, ValueError):
+                pass
+        lines.append(f"### {t}")
+        if ts_iso:
+            lines.append(f"*{ts_iso}*")
+        lines.append("")
+        lines.append(text)
+        lines.append("")
+        msg_count += 1
+        if msg_count >= limit:
+            break
+
+    body = "\n".join(lines)
+    filename = f"session-{session_id[:8]}.md"
+    return PlainTextResponse(
+        body,
+        media_type="text/markdown; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 @app.get("/api/sessions/{session_id}/transcript")
 def session_transcript(session_id: str, limit: int = 400) -> dict[str, Any]:
     meta = _INDEX.get(session_id)
