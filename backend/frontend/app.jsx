@@ -245,6 +245,7 @@ function App() {
     return DEFAULT_TWEAKS;
   });
   const [tweaksOpen, setTweaksOpen] = useStateA(false);
+  const [paletteOpen, setPaletteOpen] = useStateA(false);
   const [sessions, setSessions] = useStateA([]);
   const [selectedId, setSelectedId] = useStateA(null);
   const [hovered, setHovered] = useStateA(null);
@@ -263,6 +264,30 @@ function App() {
     try { localStorage.setItem('cm_tweaks', JSON.stringify(tweaks)); } catch {}
     window.parent.postMessage({ type: '__edit_mode_set_keys', edits: tweaks }, '*');
   }, [tweaks]);
+
+  // Ctrl+K opens the command palette (jump-to-session). Global binding
+  // — VSCode pattern; works even when focus is inside xterm.js because
+  // we bind in the capture phase and preventDefault before xterm gets a
+  // chance to interpret it as paste shortcut. Ignored when the focused
+  // element is a text input so users can still type "k" normally.
+  useEffectA(() => {
+    const onKey = (e) => {
+      const ctrl = e.ctrlKey || e.metaKey;
+      if (!ctrl || e.key !== 'k') return;
+      // Let `k` through in plain text inputs (Search, etc. — users
+      // shouldn't lose their typing to a global shortcut). But DO still
+      // trigger when inside xterm so Ctrl+K works mid-claude-session.
+      const ae = document.activeElement;
+      const tag = ae?.tagName;
+      const isTextInput = tag === 'INPUT' || tag === 'TEXTAREA' || ae?.isContentEditable;
+      if (isTextInput && !ae?.closest('.xterm')) return;
+      e.preventDefault();
+      e.stopPropagation();
+      setPaletteOpen((o) => !o);
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, []);
 
   useEffectA(() => {
     const handler = (e) => {
@@ -404,6 +429,15 @@ function App() {
         onClose={() => setTweaksOpen(false)}/>
       <ToastStack toasts={toasts}/>
       <LoadingBar status={loadStatus} accent={accent}/>
+      {window.CommandPalette && (
+        <window.CommandPalette
+          open={paletteOpen}
+          onClose={() => setPaletteOpen(false)}
+          onPick={(session) => {
+            setSelectedId(session.id);
+            setPaletteOpen(false);
+          }}/>
+      )}
     </WindowChrome>
   );
 }
