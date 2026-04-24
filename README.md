@@ -33,28 +33,88 @@ no cloud round-trip.
 
 ## Features
 
+### Finding sessions
 - **Discovery** — lists every Claude Code session on the machine (sub-agent files filtered out)
 - **Live** — SSE watcher surfaces new/updated sessions as they happen
 - **Active** — detects currently-running sessions via `~/.claude/sessions/<pid>.json` + PID check
-- **Resume** — "New tab" / "Split" buttons spawn `wt.exe ... claude --resume <uuid>`
-- **Focus** — for active sessions, a `Focus` button switches the exact Windows Terminal tab to the front
-  (UI Automation + OSC-0 title stamping via a Claude Code hook)
-- **Folder filter** — per-project-folder checkboxes with *Only* / *All* / *None*; folders >1000 sessions auto-unchecked
+- **Smart search** (v1.2.0+) — type 2+ words in the left-pane search box to get TF-weighted
+  ranked results instead of a substring match. Works with Hebrew, Chinese, accented Latin (v1.2.3+).
+- **Ctrl+K command palette** (v1.2.2+) — jump to any session by natural-language query;
+  arrow-key nav; preview pane shows first user messages + cwd + branch; remembers your
+  last 5 searches.
+- **Folder filter** — per-project-folder checkboxes with *Only* / *All* / *None*; folders
+  >1000 sessions auto-unchecked
+- **Pin to top** (v1.2.6+) — ☆ on row hover → session floats above everything regardless
+  of recency. Persisted across restarts.
+- **`/` focus search · ↑↓ nav · Enter open · Esc clear** — keyboard-only workflow (v1.2.7+)
+- **`?` shows all shortcuts** (v1.2.10+) — every keybinding discoverable at a glance
+
+### Working with sessions
+- **Embedded terminals** (v0.7+) — spawn `claude --resume <sid>` right in the app
+  without launching Windows Terminal. Splits, tabs, and persistent layout across restarts.
+- **Graceful `/exit`** (v1.1.0+) — session tabs shell-wrap claude so `/exit` drops to
+  a shell prompt instead of killing the tab.
+- **Focus** — for active sessions, a `Focus` button switches the exact Windows Terminal tab
+  to the front (UI Automation + OSC-0 title stamping via a Claude Code hook)
+- **Inline rename** — click any session title to set a custom label, persisted in
+  `~/.claude/viewer-labels.json`
+- **Reads Claude's rename** — shows titles set via `/rename` inside Claude Code
+  (`custom-title` JSONL entries)
+- **Move session between projects** — drag-safe `POST /api/sessions/{sid}/move` with
+  copy-verify-unlink + SHA-256 (v0.9.9+)
+
+### Transcript
 - **Hover preview** — shows the first 10 user messages of any session
-- **Inline rename** — click any session title to set a custom label, persisted in `~/.claude/viewer-labels.json`
-- **Reads Claude's rename** — shows titles set via `/rename` inside Claude Code (`custom-title` JSONL entries)
+- **Full transcript** in the right pane, auto-scrolled to latest on open
+- **Ctrl+F find-in-transcript** (v1.2.7+) — live highlighting, match counter, Enter
+  cycles, Shift+Enter backwards
+- **Copy session ID** — click the UUID chip in the header (v1.2.6+)
+- **Copy message content** — hover any message, click the `copy` button (v1.2.9+)
+- **Export as markdown** — `↓ .md` button downloads `session-<id>.md` with
+  title + metadata + role headings + ISO-8601 timestamps (v1.2.5+)
+
+### Operations
+- **Self-update** (v0.8.0+) — built-in banner checks GitHub Releases and offers
+  "Restart & apply" swap-helper flow
+- **Proper installer** (v1.2.0+) — `AgentManager-<ver>-setup.exe` gives you an
+  Add/Remove Programs entry, silent-install support (`/VERYSILENT`), and a clean
+  uninstall path (via `--uninstall` CLI) that kills the daemon + PTY grandchildren
+- **`--uninstall` CLI** (v1.2.0+) — single entry point removes state dir, shortcuts,
+  daemon, registry entries
+- **Opt-in daemon split** (v1.2.0+) — set `AGENTMANAGER_DAEMON=1` for an
+  experimental PTY-owning daemon + pywebview UI shim. Default-on planned for v1.3.0
+  (ADR-18)
 
 ## Install
 
 Pick whichever fits. All four install paths are built and verified by the
 [release workflow](.github/workflows/release.yml) on every tagged release.
 
-### 1. Native Windows x64 app (no Python required)
+### 1. Installer (recommended — Add/Remove Programs entry)
 
-Download `claude-sessions-viewer-<ver>-windows-x64.exe` from the
+Download **`AgentManager-<ver>-setup.exe`** from the
 [Releases page](https://github.com/MenachemBarak/AgentCLISessionManager/releases/latest)
-and double-click. A real desktop window opens — no browser, no terminal, no
-Python install.
+and run it. Standard Windows Next/Next/Finish installer; per-user (no UAC prompt);
+installs to `%LOCALAPPDATA%\Programs\AgentManager\`; appears in Add/Remove Programs.
+
+Silent install for scripting:
+```cmd
+AgentManager-X.Y.Z-setup.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
+```
+
+Uninstall via Add/Remove Programs → AgentManager, or from the command line:
+```cmd
+AgentManager.exe --uninstall --yes
+```
+Uninstallation stops any running daemon + walks the PTY tree to kill orphaned
+children; removes state dir + shortcuts + registry entries.
+
+### 2. Raw .exe (auto-update back-compat path)
+
+Download `AgentManager-<ver>-windows-x64.exe` from the same page and double-click.
+Single-file PyInstaller exe, no install wizard. Also covers the `claude-sessions-viewer-<ver>-windows-x64.exe`
+legacy filename for users who installed prior to the v1.0.0 rebrand — the release
+publishes both so your existing auto-updater keeps working.
 
 Requires Edge WebView2, which ships pre-installed on every Windows 11 machine.
 
