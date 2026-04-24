@@ -6,6 +6,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.2.14] — 2026-04-24
+
+### Added — `(press /)` hint in search placeholder
+- Inline hint in the left-pane search placeholder so the `/`
+  keyboard shortcut for focus-search is discoverable without
+  opening the `?` help overlay.
+
 ## [1.2.13] — 2026-04-24
 
 ### Added — `DAEMON` chip in the title bar when opt-in daemon mode is active
