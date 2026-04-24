@@ -16,12 +16,12 @@ import argparse
 import os
 import socket
 import sys
-from typing import Any
 import threading
 import time
 import urllib.request
 import webbrowser
 from pathlib import Path
+from typing import Any
 
 from backend.__version__ import __version__
 
