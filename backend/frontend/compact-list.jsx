@@ -589,23 +589,55 @@ function CompactList({ sessions, accent, selectedId, onSelect, sort, setSort, qu
     initializedFoldersRef.current = true;
   }, [folderCounts]);
 
+  // Smart search (task #40): when query has 2+ tokens, hit /api/search
+  // for TF-weighted ranking. Single-token and empty queries keep the
+  // instant local substring filter — zero-latency typing UX. The API
+  // call is debounced 250ms so per-keystroke fetches don't hammer the
+  // backend; we retain the previous result during pending fetches so
+  // the list doesn't flicker.
+  const [smartIds, setSmartIds] = useStateCL(null); // Set<string> | null (null = skip smart)
+  useEffectCL(() => {
+    const q = query.trim();
+    const tokens = q.split(/\s+/).filter(Boolean);
+    if (tokens.length < 2) {
+      setSmartIds(null);
+      return;
+    }
+    let cancelled = false;
+    const handle = setTimeout(async () => {
+      try {
+        const r = await fetch(`/api/search?q=${encodeURIComponent(q)}&limit=100`);
+        if (!r.ok || cancelled) return;
+        const body = await r.json();
+        const ids = new Set((body.items || []).map((s) => s.id));
+        setSmartIds(ids);
+      } catch {
+        if (!cancelled) setSmartIds(null);
+      }
+    }, 250);
+    return () => { cancelled = true; clearTimeout(handle); };
+  }, [query]);
+
   // Active sessions bypass folder/date filters — always show ALL running sessions.
   // Search still applies so user can narrow even active.
   const active = useMemoCL(() => {
     const q = query.trim().toLowerCase();
+    const useSmart = smartIds !== null;
     return sessions.filter((s) => {
       if (!s.active) return false;
-      if (q && !(
+      if (!q) return true;
+      if (useSmart) return smartIds.has(s.id);
+      return (
         s.title.toLowerCase().includes(q) ||
         s.cwd.toLowerCase().includes(q) ||
         s.branch.toLowerCase().includes(q)
-      )) return false;
-      return true;
+      );
     }).sort((a, b) => b.lastActive - a.lastActive);
-  }, [sessions, query]);
+  }, [sessions, query, smartIds]);
 
   const idle = useMemoCL(() => {
     const q = query.trim().toLowerCase();
+    const useSmart = smartIds !== null;
     const now = Date.now();
     const dayMs = 24 * 3600 * 1000;
     const filteredIdle = sessions.filter((s) => {
@@ -614,15 +646,16 @@ function CompactList({ sessions, accent, selectedId, onSelect, sort, setSort, qu
       if (dateRange === 'today' && now - s.createdAt > dayMs) return false;
       if (dateRange === '7d' && now - s.createdAt > 7 * dayMs) return false;
       if (dateRange === '30d' && now - s.createdAt > 30 * dayMs) return false;
-      if (q && !(
+      if (!q) return true;
+      if (useSmart) return smartIds.has(s.id);
+      return (
         s.title.toLowerCase().includes(q) ||
         s.cwd.toLowerCase().includes(q) ||
         s.branch.toLowerCase().includes(q)
-      )) return false;
-      return true;
+      );
     });
     return sortSessions(filteredIdle, sort);
-  }, [sessions, query, dateRange, folderFilter, sort]);
+  }, [sessions, query, smartIds, dateRange, folderFilter, sort]);
   const idleGroups = useMemoCL(() => groupByCwd(idle), [idle]);
 
   return (
