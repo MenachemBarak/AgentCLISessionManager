@@ -37,6 +37,58 @@
 </head>
 <body>
 <div id="root"></div>
+<!--
+  Daemon-mode bearer-token injection (ADR-18 / Task #42 Phase 3c).
+  When the UI shim launches the webview against the daemon, it puts the
+  per-install bearer token in the URL fragment:
+        http://127.0.0.1:8765/#token=<hex>
+  The fragment is NEVER sent to the server (by RFC 3986 + browser
+  behaviour), so it cannot leak via server logs. This inline script runs
+  BEFORE every module script below — it parses the fragment and patches
+  window.fetch and the WebSocket constructor to attach the token to
+  every same-origin request. In non-daemon (legacy) mode no fragment is
+  present and both patches are no-ops, preserving existing behaviour.
+-->
+<script>
+(function () {
+  var m = /(?:^|[#&])token=([0-9a-fA-F]+)/.exec(window.location.hash || '');
+  if (!m) return;
+  var token = m[1];
+  window._daemonToken = token;
+  // Strip the fragment from the URL bar so the token doesn't linger in
+  // the visible location if the user happens to right-click-inspect.
+  try { history.replaceState(null, '', window.location.pathname + window.location.search); } catch (e) {}
+
+  var origFetch = window.fetch.bind(window);
+  window.fetch = function (input, init) {
+    init = init || {};
+    var headers = new Headers(init.headers || (typeof input === 'object' && input && input.headers) || {});
+    if (!headers.has('Authorization')) headers.set('Authorization', 'Bearer ' + token);
+    init.headers = headers;
+    return origFetch(input, init);
+  };
+
+  // WebSocket doesn't support custom headers in browsers. We pass the
+  // token in the URL query so the daemon can read it server-side
+  // (handler lives in backend/app.py's websocket endpoint — Phase 3d
+  // wires WS auth). For now this is forward-compat: frames sent before
+  // WS auth lands are harmless since the URL includes the token.
+  var OrigWS = window.WebSocket;
+  window.WebSocket = function (url, protocols) {
+    try {
+      var u = new URL(url, window.location.href);
+      if (!u.searchParams.has('token')) u.searchParams.set('token', token);
+      url = u.toString();
+    } catch (e) {}
+    return protocols === undefined ? new OrigWS(url) : new OrigWS(url, protocols);
+  };
+  window.WebSocket.prototype = OrigWS.prototype;
+  window.WebSocket.CONNECTING = OrigWS.CONNECTING;
+  window.WebSocket.OPEN       = OrigWS.OPEN;
+  window.WebSocket.CLOSING    = OrigWS.CLOSING;
+  window.WebSocket.CLOSED     = OrigWS.CLOSED;
+})();
+</script>
 <!-- xterm.js — pinned via unpkg, same CDN strategy as React/Babel above.
      Addon-fit auto-resizes the viewport to the DOM container; web-links
      makes http(s)://… targets clickable in the rendered output. -->
