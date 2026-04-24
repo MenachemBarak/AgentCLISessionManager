@@ -100,7 +100,39 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--log-level", default="warning", choices=["critical", "error", "warning", "info", "debug"]
     )
+    parser.add_argument(
+        "--probe-daemon",
+        action="store_true",
+        help=(
+            "(ADR-18 / Task #42 Phase 3b) Probe 127.0.0.1:<port> for an "
+            "AgentManager daemon and exit: 0 if ours, 1 if absent, "
+            "3 if port held by an unrelated process. Used by the UI shim to "
+            "decide whether to autostart a daemon."
+        ),
+    )
     args = parser.parse_args(argv)
+
+    # ── daemon probe (no server start) ─────────────────────────────
+    # Runs BEFORE frontend/logging init so the probe has minimal side effects.
+    if args.probe_daemon:
+        from daemon.launcher import probe
+
+        port = args.port or 8765
+        result = probe(port)
+        state = result.get("state")
+        if state == "ours":
+            print(f"daemon: ours (version {result.get('daemonVersion')}) on {args.host}:{port}")
+            return 0
+        if state == "absent":
+            print(f"daemon: absent on {args.host}:{port}", file=sys.stderr)
+            return 1
+        # "other" — port busy with something that isn't our daemon.
+        detail = result.get("error") or f"http status {result.get('httpStatus')}"
+        print(
+            f"daemon: port {port} held by unrelated process ({detail}) — refusing to start",
+            file=sys.stderr,
+        )
+        return 3
 
     _frontend_dir()  # fail fast if packaging is broken
 
