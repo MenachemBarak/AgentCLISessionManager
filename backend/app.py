@@ -333,6 +333,40 @@ def _scan_session_meta(path: Path, deep: bool = False) -> dict[str, Any] | None:
 
 
 # ─────────────────────── Active PID detection ───────────────────────
+# Tolerance in seconds for comparing marker.startedAt (ms, written by
+# Claude Code CLI) against psutil.Process(pid).create_time() (unix sec).
+# Windows clock resolution + our rounding can drift a second either way.
+_PID_REUSE_TOLERANCE_S = 3.0
+
+
+def _is_live_marker(pid: int, started_at_ms: int | None) -> bool:
+    """True iff `pid` exists AND the process started close enough to the
+    marker's recorded startedAt to rule out PID reuse.
+
+    Windows recycles PIDs quickly: closing a shell that was hosting
+    `claude` frees its PID, and the OS may hand it to an unrelated
+    process seconds later. `psutil.pid_exists(pid)` then returns True
+    for the *wrong* process, so the marker would stay "active" forever
+    even after a `rescan`. The fix is to cross-check the process's
+    actual start time against what Claude Code recorded.
+
+    Falls back to the old pid_exists-only check when the marker has no
+    startedAt (pre-Claude-Code-2.x markers) — this keeps legacy markers
+    working, accepting that those remain vulnerable to PID reuse until
+    they get overwritten by a fresh session.
+    """
+    try:
+        if not psutil.pid_exists(pid):
+            return False
+        if not started_at_ms:
+            return True  # legacy marker without startedAt — best-effort
+        proc = psutil.Process(pid)
+        expected = started_at_ms / 1000.0
+        return abs(proc.create_time() - expected) < _PID_REUSE_TOLERANCE_S
+    except (psutil.NoSuchProcess, psutil.AccessDenied, OSError):
+        return False
+
+
 def _get_active_session_ids() -> set[str]:
     active: set[str] = set()
     if not ACTIVE_DIR.is_dir():
@@ -342,7 +376,8 @@ def _get_active_session_ids() -> set[str]:
             data = json.loads(f.read_text(encoding="utf-8"))
             pid = data.get("pid")
             sid = data.get("sessionId")
-            if pid and sid and psutil.pid_exists(int(pid)):
+            started_at = data.get("startedAt")
+            if pid and sid and _is_live_marker(int(pid), started_at):
                 active.add(sid)
         except Exception:
             continue
@@ -402,11 +437,19 @@ def _all_jsonl() -> list[Path]:
 
 
 def _cleanup_stale_active_markers() -> int:
-    """Delete `~/.claude/sessions/<pid>.json` files whose PID no longer
-    exists. Called on startup + on explicit rescan — after a power-loss /
-    OS reboot these stale markers accumulate and cause the `ACTIVE` panel
-    to show ghost-sessions whose processes died hard. Returns the number
-    of stale files removed."""
+    """Delete `~/.claude/sessions/<pid>.json` files whose process is
+    gone — or whose PID has been recycled to a different process.
+
+    Called on startup + on explicit rescan. Without the PID-reuse
+    defense this accumulated ghost markers on Windows: closing a
+    PowerShell hosting `claude` freed its PID, the OS handed it to
+    e.g. notepad, `pid_exists` returned True for the new owner, and
+    the marker stayed "active" forever. `_is_live_marker` cross-checks
+    `psutil.Process(pid).create_time()` against the marker's own
+    `startedAt` with a small tolerance.
+
+    Returns the number of stale files removed.
+    """
     if not ACTIVE_DIR.is_dir():
         return 0
     removed = 0
@@ -414,6 +457,7 @@ def _cleanup_stale_active_markers() -> int:
         try:
             data = json.loads(f.read_text(encoding="utf-8"))
             pid = int(data.get("pid") or 0)
+            started_at = data.get("startedAt")
         except Exception:  # noqa: BLE001
             # Unreadable / corrupt marker — drop it.
             try:
@@ -422,7 +466,7 @@ def _cleanup_stale_active_markers() -> int:
             except OSError:
                 pass
             continue
-        if pid and not psutil.pid_exists(pid):
+        if pid and not _is_live_marker(pid, started_at):
             try:
                 f.unlink()
                 removed += 1
