@@ -642,6 +642,49 @@ def update_apply() -> dict[str, Any]:
     return dict(result)
 
 
+# ADR-18 Phase 7: stub endpoints that will become meaningful once the
+# two-binary split ships in Phase 9. Today they exist so the Phase-1
+# daemon e2e test file (update.spec.ts) can compile against stable
+# names; today they return 501 Not Implemented. Once we publish a
+# separate AgentManager-Daemon.exe, apply-ui-only will swap just the UI
+# while the daemon stays up (the payoff of the whole split), and
+# apply-daemon will run the daemon migration path with restart-ping.
+
+
+@app.post("/api/update/apply-ui-only")
+def update_apply_ui_only() -> dict[str, Any]:
+    """Swap the UI exe only; leave the daemon running (Phase 9 payoff).
+
+    Today: stub that returns 501 with a machine-parseable reason code
+    so the Phase-1 e2e test can assert the contract is in place.
+    """
+    raise HTTPException(
+        status_code=501,
+        detail={
+            "code": "DAEMON_NOT_SPLIT",
+            "message": (
+                "UI-only updates require the two-binary ship (Phase 9). "
+                "Current builds package UI+daemon in one exe; use /api/update/apply."
+            ),
+        },
+    )
+
+
+@app.post("/api/update/apply-daemon")
+def update_apply_daemon() -> dict[str, Any]:
+    """Swap the daemon exe; PTYs restart (covered by restart-ping)."""
+    raise HTTPException(
+        status_code=501,
+        detail={
+            "code": "DAEMON_NOT_SPLIT",
+            "message": (
+                "Daemon-only updates require the two-binary ship (Phase 9). "
+                "Use /api/update/apply for the combined swap."
+            ),
+        },
+    )
+
+
 @app.get("/api/search")
 def search_sessions(q: str = "", limit: int = 20) -> dict[str, Any]:
     """Smart session search (task #40).
