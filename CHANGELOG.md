@@ -6,6 +6,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.2.7] — 2026-04-24
+
+### Added — keyboard navigation in the session list
+- **↑ / ↓** move selection through the left-pane (across folder
+  groups + the active section). **/** focuses the search input.
+  **Esc** clears the search when focused, then blurs. Ignored inside
+  text inputs and xterm panes so Ctrl+K (palette), Ctrl+F (find),
+  and typing-inside-claude all still work.
+
+### Added — Ctrl+F find-in-transcript
+- Press **Ctrl+F** while a session is loaded → a find bar appears
+  above the transcript. Matches are highlighted in every message;
+  the current match is outlined and scrolled into view; **Enter**
+  cycles forward, **Shift+Enter** backward; match counter shows
+  `3/12` or `0 matches`. **Esc** closes.
+
 ## [1.2.6] — 2026-04-24
 
 ### Added — pin sessions to top
