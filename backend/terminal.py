@@ -31,6 +31,7 @@ import shlex
 import threading
 import time
 import uuid
+from collections import deque
 from collections.abc import Callable, Coroutine
 from typing import Any
 
@@ -113,6 +114,50 @@ def subprocess_list_to_windows_str(argv: list[str]) -> str:
     return " ".join(out)
 
 
+DEFAULT_RING_BUFFER_BYTES = 256 * 1024  # ADR-18 §Ring buffer & rehydrate
+
+
+class RingBuffer:
+    """Bounded byte buffer used for PTY scrollback replay on WS reconnect.
+
+    Keeps at most `max_bytes` of PTY output (UTF-8 encoded). Older chunks
+    get dropped as new ones arrive. Thread-safe — both the PTY reader
+    thread and the asyncio request-handler thread may touch it.
+
+    Design rationale (ADR-18 §Hard problems §3): when a UI reconnects
+    after restart, the daemon must replay recent output so the user
+    sees a continuous scrollback instead of starting at an empty pane.
+    256 KB is a middle ground — enough for a few hundred claude
+    tool-use messages, small enough to avoid OOM on chatty sessions.
+    """
+
+    __slots__ = ("max_bytes", "_chunks", "_total", "_lock")
+
+    def __init__(self, max_bytes: int = DEFAULT_RING_BUFFER_BYTES) -> None:
+        self.max_bytes = max_bytes
+        self._chunks: deque[bytes] = deque()
+        self._total = 0
+        self._lock = threading.Lock()
+
+    def append(self, data: bytes) -> None:
+        if not data:
+            return
+        with self._lock:
+            self._chunks.append(data)
+            self._total += len(data)
+            while self._total > self.max_bytes and self._chunks:
+                old = self._chunks.popleft()
+                self._total -= len(old)
+
+    def read_all(self) -> bytes:
+        with self._lock:
+            return b"".join(self._chunks)
+
+    def size(self) -> int:
+        with self._lock:
+            return self._total
+
+
 class PtySession:
     """One PTY process + a pair of read/write channels.
 
@@ -127,6 +172,10 @@ class PtySession:
     `on_output` is called from the read thread — the caller is
     responsible for marshalling back to an event loop. `PtySessionManager`
     below takes care of that for the FastAPI integration.
+
+    Ring buffer (ADR-18 Phase 4): every chunk the PTY emits is also
+    appended to `self.ring_buffer` so a reconnecting client can
+    `read_all()` the scrollback before switching to live streaming.
     """
 
     def __init__(
@@ -148,6 +197,7 @@ class PtySession:
         self._stop = threading.Event()
         self.on_output: Callable[[str], None] | None = None
         self.on_exit: Callable[[int | None], None] | None = None
+        self.ring_buffer = RingBuffer()
 
     def spawn(
         self,
@@ -202,6 +252,13 @@ class PtySession:
             if chunk:
                 dead_since = None  # got data — reset grace timer
                 data = chunk if isinstance(chunk, str) else chunk.decode("utf-8", errors="replace")
+                # Ring-buffer append happens BEFORE the callback so a
+                # late-connecting client still sees the chunk during
+                # replay even if the on_output callback (WS send) raised.
+                try:
+                    self.ring_buffer.append(data.encode("utf-8", errors="replace"))
+                except Exception:  # noqa: BLE001 — never let buffer failure kill the PTY reader
+                    log.exception("ring_buffer append failed")
                 cb = self.on_output
                 if cb:
                     try:
@@ -280,6 +337,12 @@ class PtySessionManager:
     def add(self, session: PtySession) -> None:
         with self._lock:
             self.sessions[session.id] = session
+
+    def get(self, session_id: str) -> PtySession | None:
+        """Look up a PTY by id. Returns None when the caller-supplied
+        id doesn't match a live session — callers should 404 on that."""
+        with self._lock:
+            return self.sessions.get(session_id)
 
     def remove(self, session_id: str) -> PtySession | None:
         with self._lock:

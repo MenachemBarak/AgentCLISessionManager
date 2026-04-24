@@ -1523,6 +1523,85 @@ async def _shutdown() -> None:
     _pty_manager.close_all()
 
 
+# ─────────────────────── PTY REST surface (ADR-18 Phase 4) ───────────
+# These endpoints let a caller create a PTY, write into it, and replay
+# its ring buffer. They're the load-bearing surface for the rehydrate-
+# on-reconnect behavior the Phase 1 daemon e2e tests assert. They sit
+# alongside the WebSocket flow (WS is still how live output streams);
+# these are for clients that need imperative control (tests, future UI
+# rehydration helpers, tooling).
+
+
+class PtyCreateRequest(BaseModel):
+    cmd: list[str]
+    cwd: str | None = None
+    cols: int = 80
+    rows: int = 24
+
+
+class PtyCreateResponse(BaseModel):
+    id: str
+
+
+class PtyWriteRequest(BaseModel):
+    data: str
+
+
+@app.post("/api/pty")
+def pty_create(req: PtyCreateRequest) -> PtyCreateResponse:
+    """Spawn a PTY and register it with the manager. Returns the id
+    callers use for subsequent /write and /replay calls.
+
+    argv[0] whitelist is the same as the WebSocket spawn path — we
+    refuse to accept arbitrary user strings as exec targets.
+    """
+    if not req.cmd or req.cmd[0] not in _PTY_ALLOWED_SHELLS:
+        raise HTTPException(status_code=400, detail=f"cmd[0] must be one of {sorted(_PTY_ALLOWED_SHELLS)}")
+
+    # Resolve cwd the same defensive way as the WS path: missing dir falls
+    # back to $HOME so pywinpty doesn't explode on a stale layout entry.
+    cwd: str | None = None
+    if req.cwd:
+        try:
+            p = Path(req.cwd).resolve(strict=False)
+            cwd = str(p) if p.is_dir() else str(Path.home())
+        except (OSError, ValueError):
+            cwd = str(Path.home())
+
+    session = PtySession(cmd=list(req.cmd), cols=req.cols, rows=req.rows, cwd=cwd)
+    try:
+        session.spawn()
+    except Exception as exc:  # noqa: BLE001 — spawn failures are user-legible
+        raise HTTPException(status_code=500, detail=f"pty spawn failed: {exc}") from exc
+    _pty_manager.add(session)
+    return PtyCreateResponse(id=session.id)
+
+
+@app.post("/api/pty/{pty_id}/write")
+def pty_write(pty_id: str, req: PtyWriteRequest) -> dict[str, Any]:
+    session = _pty_manager.get(pty_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail=f"pty {pty_id!r} not found")
+    written = session.write(req.data)
+    return {"ok": True, "bytes": written}
+
+
+@app.get("/api/pty/{pty_id}/replay")
+def pty_replay(pty_id: str) -> Any:
+    """Return the ring buffer's current contents as plain text. Callers
+    use this right after (re)connecting to rehydrate scrollback before
+    switching to live WS streaming."""
+    from starlette.responses import PlainTextResponse
+
+    session = _pty_manager.get(pty_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail=f"pty {pty_id!r} not found")
+    return PlainTextResponse(
+        session.ring_buffer.read_all().decode("utf-8", errors="replace"),
+        media_type="text/plain; charset=utf-8",
+    )
+
+
 @app.get("/api/stream")
 async def stream_events() -> EventSourceResponse:
     global _event_queue, _event_loop
