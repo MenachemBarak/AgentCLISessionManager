@@ -871,9 +871,41 @@ agent-CLI support. Existing endpoints and UI work identically.
   - "New tab" / "Split" buttons spawn `wt.exe ... claude --resume <uuid>`
   - Self-installing Desktop shortcut launcher
 
-[Unreleased]: https://github.com/MenachemBarak/AgentCLISessionManager/compare/v0.7.1...HEAD
+[Unreleased]: https://github.com/MenachemBarak/AgentCLISessionManager/compare/v1.2.15...HEAD
+[1.2.15]: https://github.com/MenachemBarak/AgentCLISessionManager/releases/tag/v1.2.15
+[1.2.14]: https://github.com/MenachemBarak/AgentCLISessionManager/releases/tag/v1.2.14
+[1.2.13]: https://github.com/MenachemBarak/AgentCLISessionManager/releases/tag/v1.2.13
+[1.2.12]: https://github.com/MenachemBarak/AgentCLISessionManager/releases/tag/v1.2.12
+[1.2.11]: https://github.com/MenachemBarak/AgentCLISessionManager/releases/tag/v1.2.11
+[1.2.10]: https://github.com/MenachemBarak/AgentCLISessionManager/releases/tag/v1.2.10
+[1.2.9]: https://github.com/MenachemBarak/AgentCLISessionManager/releases/tag/v1.2.9
+[1.2.8]: https://github.com/MenachemBarak/AgentCLISessionManager/releases/tag/v1.2.8
+[1.2.7]: https://github.com/MenachemBarak/AgentCLISessionManager/releases/tag/v1.2.7
+[1.2.6]: https://github.com/MenachemBarak/AgentCLISessionManager/releases/tag/v1.2.6
+[1.2.5]: https://github.com/MenachemBarak/AgentCLISessionManager/releases/tag/v1.2.5
+[1.2.4]: https://github.com/MenachemBarak/AgentCLISessionManager/releases/tag/v1.2.4
+[1.2.3]: https://github.com/MenachemBarak/AgentCLISessionManager/releases/tag/v1.2.3
+[1.2.2]: https://github.com/MenachemBarak/AgentCLISessionManager/releases/tag/v1.2.2
+[1.2.1]: https://github.com/MenachemBarak/AgentCLISessionManager/releases/tag/v1.2.1
+[1.2.0]: https://github.com/MenachemBarak/AgentCLISessionManager/releases/tag/v1.2.0
+[1.1.1]: https://github.com/MenachemBarak/AgentCLISessionManager/releases/tag/v1.1.1
+[1.1.0]: https://github.com/MenachemBarak/AgentCLISessionManager/releases/tag/v1.1.0
+[1.0.1]: https://github.com/MenachemBarak/AgentCLISessionManager/releases/tag/v1.0.1
+[1.0.0]: https://github.com/MenachemBarak/AgentCLISessionManager/releases/tag/v1.0.0
+[0.9.11]: https://github.com/MenachemBarak/AgentCLISessionManager/releases/tag/v0.9.11
+[0.9.10]: https://github.com/MenachemBarak/AgentCLISessionManager/releases/tag/v0.9.10
+[0.9.9]: https://github.com/MenachemBarak/AgentCLISessionManager/releases/tag/v0.9.9
+[0.9.8]: https://github.com/MenachemBarak/AgentCLISessionManager/releases/tag/v0.9.8
+[0.9.7]: https://github.com/MenachemBarak/AgentCLISessionManager/releases/tag/v0.9.7
+[0.9.6]: https://github.com/MenachemBarak/AgentCLISessionManager/releases/tag/v0.9.6
+[0.9.5]: https://github.com/MenachemBarak/AgentCLISessionManager/releases/tag/v0.9.5
+[0.9.4]: https://github.com/MenachemBarak/AgentCLISessionManager/releases/tag/v0.9.4
+[0.9.3]: https://github.com/MenachemBarak/AgentCLISessionManager/releases/tag/v0.9.3
+[0.9.2]: https://github.com/MenachemBarak/AgentCLISessionManager/releases/tag/v0.9.2
+[0.9.1]: https://github.com/MenachemBarak/AgentCLISessionManager/releases/tag/v0.9.1
+[0.9.0]: https://github.com/MenachemBarak/AgentCLISessionManager/releases/tag/v0.9.0
+[0.8.0]: https://github.com/MenachemBarak/AgentCLISessionManager/releases/tag/v0.8.0
 [0.7.1]: https://github.com/MenachemBarak/AgentCLISessionManager/releases/tag/v0.7.1
-[0.7.0]: https://github.com/MenachemBarak/AgentCLISessionManager/releases/tag/v0.7.0
 [0.6.0]: https://github.com/MenachemBarak/AgentCLISessionManager/releases/tag/v0.6.0
 [0.5.0]: https://github.com/MenachemBarak/AgentCLISessionManager/releases/tag/v0.5.0
 [0.4.2]: https://github.com/MenachemBarak/AgentCLISessionManager/releases/tag/v0.4.2
