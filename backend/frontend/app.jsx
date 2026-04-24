@@ -23,6 +23,12 @@ function WindowChrome({ children, tweaks, onToggleTweaks, selectedCount, activeC
   // "v0.4.2" that used to live below was silently stale across every 0.5+
   // release — users saw 0.4.2 in the title bar while running 0.8.0.
   const [versionLabel, setVersionLabel] = React.useState('');
+  // Daemon mode is opt-in via AGENTMANAGER_DAEMON=1 — when enabled, the
+  // shim boots the UI through the webview with a #token=... fragment
+  // that the inline auth-init script strips and stashes at
+  // window._daemonToken. If that exists, render a DAEMON chip so power
+  // users can tell which mode they're in.
+  const [daemonMode] = React.useState(() => !!window._daemonToken);
   React.useEffect(() => {
     fetch('/api/status')
       .then((r) => r.json())
@@ -72,6 +78,20 @@ function WindowChrome({ children, tweaks, onToggleTweaks, selectedCount, activeC
             fontFamily: 'JetBrains Mono, monospace', fontSize: 10.5,
             color: 'rgba(255,255,255,0.3)',
           }}>{versionLabel}</span>
+          {daemonMode && (
+            <span
+              data-testid="daemon-mode-chip"
+              title="Running in opt-in daemon-split mode (AGENTMANAGER_DAEMON=1)"
+              style={{
+                padding: '1px 6px',
+                border: '1px solid rgba(215, 162, 74, 0.45)',
+                borderRadius: 3,
+                fontFamily: 'JetBrains Mono, monospace',
+                fontSize: 9, letterSpacing: 0.6, fontWeight: 700,
+                color: 'rgba(215, 162, 74, 0.95)',
+                textTransform: 'uppercase',
+              }}>daemon</span>
+          )}
         </div>
         <span style={{ flex: 1 }}/>
         <div style={{
