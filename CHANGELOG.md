@@ -6,6 +6,42 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.2.16] — 2026-04-24
+
+### Fixed — blank pane caused by pane-id collisions (#96)
+- User-reported: a freshly-installed v1.2.15 rendered one terminal tab
+  completely blank. Root-caused from the persisted layout state —
+  pane ids collided both across tabs (term-1 and term-4 both had
+  `pane-2`) and within a single tree (term-1 had two panes called
+  `pane-1`). The v1.2.15 portal refactor used `document.querySelector`
+  for slot lookup which returned the wrong tab's hidden slot, AND
+  React's flat `key={p.id}` map collapsed duplicate keys so one slot
+  stayed empty.
+- Fix:
+  - `terminal-pane.jsx` scopes slot lookup to the owning tab div via
+    `.closest('[data-terminal-tab]')`.
+  - `terminal-splits.jsx` adds `bumpPaneSeqPastTree` (prevents future
+    collisions) and `dedupePaneIds` (heals already-corrupted state).
+  - `app.jsx` calls both on rehydrate and re-persists the healed
+    layout so the next boot starts clean.
+- Regression test `pane-id-collisions.spec.ts` covers both collision
+  classes end-to-end.
+
+### Added — rescan button surfaces ghost-marker count (#94)
+- Follow-up UX for v1.2.15's PID-reuse fix. Clicking Rescan now shows
+  transient feedback next to the button:
+    - `cleaned N stale` (accent color) when ghosts were removed
+    - `no ghosts` (grey) when everything was already clean
+- Backend already returned `staleActiveMarkersRemoved`; the UI was
+  throwing it away.
+
+### Tests
+- `msg-copy.spec.ts` + `shell-wrap-runtime.spec.ts` now seed empty
+  layout in `beforeEach` to prevent cross-test pollution from leaking
+  into Playwright frame interception (#91, #92).
+- Docs: README pipx install line bumped from stale `v0.7.1` to
+  `v1.2.15`; CHANGELOG compare-link corrected (#93).
+
 ## [1.2.15] — 2026-04-24
 
 ### Fixed — splitting a pane no longer restarts its terminals (#86)
@@ -871,7 +907,8 @@ agent-CLI support. Existing endpoints and UI work identically.
   - "New tab" / "Split" buttons spawn `wt.exe ... claude --resume <uuid>`
   - Self-installing Desktop shortcut launcher
 
-[Unreleased]: https://github.com/MenachemBarak/AgentCLISessionManager/compare/v1.2.15...HEAD
+[Unreleased]: https://github.com/MenachemBarak/AgentCLISessionManager/compare/v1.2.16...HEAD
+[1.2.16]: https://github.com/MenachemBarak/AgentCLISessionManager/releases/tag/v1.2.16
 [1.2.15]: https://github.com/MenachemBarak/AgentCLISessionManager/releases/tag/v1.2.15
 [1.2.14]: https://github.com/MenachemBarak/AgentCLISessionManager/releases/tag/v1.2.14
 [1.2.13]: https://github.com/MenachemBarak/AgentCLISessionManager/releases/tag/v1.2.13
