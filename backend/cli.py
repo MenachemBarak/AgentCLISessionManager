@@ -112,7 +112,45 @@ def main(argv: list[str] | None = None) -> int:
             "decide whether to autostart a daemon."
         ),
     )
+    parser.add_argument(
+        "--uninstall",
+        action="store_true",
+        help=(
+            "(ADR-18 Law 3) Remove AgentManager completely: stop running "
+            "daemon + PTY grandchildren, delete %%LOCALAPPDATA%%\\AgentManager\\, "
+            "remove Desktop + Start-menu shortcuts, clean HKCU registry."
+        ),
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="With --uninstall: report what would be removed without touching anything.",
+    )
+    parser.add_argument(
+        "--yes",
+        action="store_true",
+        help="With --uninstall: skip the interactive confirmation prompt.",
+    )
     args = parser.parse_args(argv)
+
+    # ── uninstall (no server start) ────────────────────────────────
+    if args.uninstall:
+        from daemon.uninstall import run_uninstall
+
+        if not args.yes and not args.dry_run:
+            print(
+                "This will stop AgentManager and remove all its data + shortcuts. "
+                "Type 'yes' to proceed, anything else to abort.",
+                file=sys.stderr,
+            )
+            try:
+                answer = input("> ").strip().lower()
+            except EOFError:
+                answer = ""
+            if answer != "yes":
+                print("aborted.", file=sys.stderr)
+                return 1
+        return run_uninstall(dry_run=args.dry_run)
 
     # ── daemon probe (no server start) ─────────────────────────────
     # Runs BEFORE frontend/logging init so the probe has minimal side effects.

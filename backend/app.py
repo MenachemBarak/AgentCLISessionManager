@@ -446,6 +446,30 @@ def status() -> dict[str, Any]:
     }
 
 
+@app.post("/api/shutdown")
+def shutdown() -> dict[str, Any]:
+    """Ask the daemon to exit cleanly (ADR-18 Law 3 / Phase 6).
+
+    Used by `AgentManager --uninstall` before force-killing. Auth-gated
+    in daemon mode — a rogue same-user process shouldn't be able to
+    kill the user's daemon with a single unauthenticated POST.
+
+    Implementation: close all PTYs, then schedule os._exit on a short
+    timer so the HTTP response has time to drain back to the caller
+    before the process vanishes.
+    """
+    import threading
+
+    _pty_manager.close_all()
+
+    def _bye() -> None:
+        time.sleep(0.15)
+        os._exit(0)
+
+    threading.Thread(target=_bye, name="AgentManager-shutdown", daemon=True).start()
+    return {"ok": True, "message": "shutting down"}
+
+
 @app.get("/api/health")
 def health() -> dict[str, Any]:
     """Cheap liveness probe used by the UI shim (ADR-18 / Task #42) to
