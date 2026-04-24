@@ -64,19 +64,20 @@ test.describe('daemon autostart & singleton (ADR-18 §Law 1 + §Architecture)', 
       squatter.listen(8765, '127.0.0.1', () => resolve());
     });
     try {
-      // UI launch path (Phase 3) must detect NOT-our-daemon on the port and
-      // surface an error. We assert by calling the shim's probe script.
-      // That script doesn't exist in v1.1.0 — the test fails until Phase 3.
-      const { execSync } = await import('child_process');
-      let failedAsExpected = false;
-      try {
-        execSync('AgentManager.exe --probe-daemon', { encoding: 'utf8', timeout: 5_000 });
-      } catch (err) {
-        failedAsExpected = String(err).toLowerCase().includes('port 8765');
-      }
+      // UI launch path (Phase 3b+) must detect NOT-our-daemon on the
+      // port and surface an error. We exercise via `backend/cli.py
+      // --probe-daemon` — the PyInstaller exe runs this exact code path.
+      // Exit 3 + stderr references port 8765 / "unrelated" when squatted.
+      const { spawnSync } = await import('child_process');
+      const res = spawnSync('python', ['-m', 'backend.cli', '--probe-daemon', '--port', '8765'], {
+        encoding: 'utf8',
+        timeout: 5_000,
+      });
+      expect(res.status, '--probe-daemon must exit 3 when port squatted').toBe(3);
+      const err = String(res.stderr || '').toLowerCase();
       expect(
-        failedAsExpected,
-        '--probe-daemon must exit non-zero with a port-8765 error when port is squatted',
+        err.includes('port 8765') || err.includes('unrelated'),
+        `stderr must mention the squatted port: ${JSON.stringify(res.stderr)}`,
       ).toBe(true);
     } finally {
       squatter.close();

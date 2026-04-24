@@ -126,7 +126,9 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], all
 # callers that haven't opted in see zero behaviour change.
 _AUTH_ALLOWLIST = {
     "/api/health",  # UI shim probes this BEFORE it has the token
-    "/docs", "/redoc", "/openapi.json",
+    "/docs",
+    "/redoc",
+    "/openapi.json",
 }
 
 
@@ -142,7 +144,7 @@ async def _bearer_auth(request, call_next):  # type: ignore[no-untyped-def]
         from starlette.responses import JSONResponse
 
         return JSONResponse({"error": "missing bearer token"}, status_code=401)
-    if header[len("bearer "):].strip() != required:
+    if header[len("bearer ") :].strip() != required:
         from starlette.responses import JSONResponse
 
         return JSONResponse({"error": "invalid bearer token"}, status_code=401)

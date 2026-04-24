@@ -10,8 +10,9 @@ shots/
 launcher/inspect.ps1
 .DS_Store
 Thumbs.db
-# local test artifacts
+# local test artifacts — written by the backend at runtime; don't commit
 tests/fixtures/claude-home/viewer-labels.json
+tests/fixtures/claude-home/viewer-terminal-state.json
 # packaging build outputs
 dist/
 build/

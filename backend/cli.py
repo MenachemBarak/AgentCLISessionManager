@@ -13,6 +13,7 @@ Installed via `pipx install claude-sessions-viewer` as `claude-sessions-viewer`.
 from __future__ import annotations
 
 import argparse
+import os
 import socket
 import sys
 import threading
@@ -176,6 +177,19 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 2
 
+    # ── daemon split mode (ADR-18 / Task #42 Phase 3c, opt-in) ─────────────
+    # When AGENTMANAGER_DAEMON=1, the UI probes 127.0.0.1:8765 for an already-
+    # running daemon and either connects to it or spawns one detached. The
+    # webview navigates to the daemon's URL with the bearer token in a URL
+    # fragment (the fragment is NOT sent to the server — only frontend JS
+    # reads it and attaches it as Authorization on subsequent requests).
+    # Legacy (non-daemon) mode is preserved by default so existing users are
+    # unaffected until we flip the default in v1.3.0.
+    if os.environ.get("AGENTMANAGER_DAEMON") == "1":
+        rc = _launch_daemon_mode(webview)
+        if rc is not None:
+            return rc
+
     port = args.port or _free_port()
     url = f"http://{args.host}:{port}/"
 
@@ -202,6 +216,61 @@ def main(argv: list[str] | None = None) -> int:
     webview.start()  # blocks until the window closes
 
     # Window closed → process exits; daemon thread dies with it.
+    return 0
+
+
+def _launch_daemon_mode(webview_mod) -> int | None:
+    """Opt-in daemon-split launch path (ADR-18 / Task #42).
+
+    Returns:
+      - None  — daemon probe/spawn failed in a non-fatal way; caller should
+                fall back to legacy in-process mode (rare).
+      - int   — exit code; caller should return it (either success after
+                the webview closes, or a failure during probe/spawn).
+    """
+    from daemon.bootstrap import read_or_create_token
+    from daemon.launcher import probe, spawn_detached, wait_for_health
+
+    port = 8765
+    state = probe(port).get("state")
+    if state == "other":
+        print(
+            f"daemon: port {port} held by unrelated process — refusing to start. "
+            "Close the other listener or unset AGENTMANAGER_DAEMON=1 to "
+            "fall back to legacy in-process mode.",
+            file=sys.stderr,
+        )
+        return 3
+    if state == "absent":
+        daemon_argv = [sys.executable, "-m", "daemon"]
+        spawn_detached(daemon_argv)
+        if not wait_for_health(port, timeout=15.0):
+            print(
+                f"daemon: failed to come up on port {port} within 15s",
+                file=sys.stderr,
+            )
+            return 1
+
+    try:
+        token = read_or_create_token()
+    except OSError as exc:
+        print(f"daemon: token unreadable ({exc})", file=sys.stderr)
+        return 1
+
+    # Fragment is parsed by frontend JS (daemon-auth-init.js) and wired
+    # into window.fetch + WebSocket. The fragment is NEVER sent to the
+    # server (by RFC 3986 + browser behaviour), so it can't leak via
+    # server logs.
+    url = f"http://127.0.0.1:{port}/#token={token}"
+    webview_mod.create_window(
+        title=f"AgentManager {__version__}",
+        url=url,
+        width=1400,
+        height=900,
+        resizable=True,
+        confirm_close=False,
+    )
+    webview_mod.start()
     return 0
 
 
