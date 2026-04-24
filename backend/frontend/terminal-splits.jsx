@@ -17,6 +17,54 @@
 let _paneSeq = 0;
 function newPaneId() { _paneSeq += 1; return `pane-${_paneSeq}`; }
 
+// Bump the sequence past any ids already present in a restored layout
+// so newly-created panes can't collide with persisted ones. Called
+// once per rehydrate (see app.jsx); idempotent.
+function bumpPaneSeqPastTree(tree) {
+  function walk(n) {
+    if (!n || typeof n !== 'object') return;
+    if (n.kind === 'pane' && typeof n.id === 'string') {
+      const m = /^pane-(\d+)$/.exec(n.id);
+      if (m) {
+        const v = parseInt(m[1], 10);
+        if (v > _paneSeq) _paneSeq = v;
+      }
+    }
+    if (Array.isArray(n.children)) n.children.forEach(walk);
+  }
+  walk(tree);
+}
+
+// Walk a restored tree and rewrite any duplicate pane ids with fresh
+// ones so React keys stay unique and each pane gets its own slot.
+// Returns { tree, changed } so the caller can decide whether to
+// re-persist the migrated layout.
+function dedupePaneIds(tree, seen) {
+  let changed = false;
+  function walk(n) {
+    if (!n || typeof n !== 'object') return n;
+    if (n.kind === 'pane') {
+      if (!n.id || seen.has(n.id)) {
+        const nextId = newPaneId();
+        changed = true;
+        seen.add(nextId);
+        return { ...n, id: nextId };
+      }
+      seen.add(n.id);
+      return n;
+    }
+    if (n.kind === 'split' && Array.isArray(n.children)) {
+      const migrated = n.children.map(walk);
+      if (migrated.some((c, i) => c !== n.children[i])) {
+        return { ...n, children: migrated };
+      }
+    }
+    return n;
+  }
+  const out = walk(tree);
+  return { tree: out, changed };
+}
+
 function makePane(spawn) {
   return { kind: 'pane', id: newPaneId(), spawn: spawn || { cmd: ['cmd.exe'] } };
 }
@@ -232,5 +280,7 @@ window.splits = {
   closeNode,
   setRatio,
   collectPanes,
+  bumpPaneSeqPastTree,
+  dedupePaneIds,
 };
 window.TileTree = TileTree;
