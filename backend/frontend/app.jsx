@@ -246,6 +246,7 @@ function App() {
   });
   const [tweaksOpen, setTweaksOpen] = useStateA(false);
   const [paletteOpen, setPaletteOpen] = useStateA(false);
+  const [helpOpen, setHelpOpen] = useStateA(false);
   const [sessions, setSessions] = useStateA([]);
   const [selectedId, setSelectedId] = useStateA(null);
   const [hovered, setHovered] = useStateA(null);
@@ -264,6 +265,23 @@ function App() {
     try { localStorage.setItem('cm_tweaks', JSON.stringify(tweaks)); } catch {}
     window.parent.postMessage({ type: '__edit_mode_set_keys', edits: tweaks }, '*');
   }, [tweaks]);
+
+  // '?' (Shift+/) anywhere except in a text input opens the keyboard
+  // shortcut help overlay. Makes every shortcut discoverable.
+  useEffectA(() => {
+    const onKey = (e) => {
+      if (e.key !== '?') return;
+      const ae = document.activeElement;
+      const tag = ae?.tagName;
+      const inTextInput = tag === 'INPUT' || tag === 'TEXTAREA' || ae?.isContentEditable;
+      const inXterm = !!ae?.closest?.('.xterm');
+      if (inTextInput || inXterm) return;
+      e.preventDefault();
+      setHelpOpen((o) => !o);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   // Ctrl+K opens the command palette (jump-to-session). Global binding
   // — VSCode pattern; works even when focus is inside xterm.js because
@@ -437,6 +455,11 @@ function App() {
             setSelectedId(session.id);
             setPaletteOpen(false);
           }}/>
+      )}
+      {window.ShortcutHelp && (
+        <window.ShortcutHelp
+          open={helpOpen}
+          onClose={() => setHelpOpen(false)}/>
       )}
     </WindowChrome>
   );
