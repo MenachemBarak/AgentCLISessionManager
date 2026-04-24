@@ -857,12 +857,39 @@ function CompactList({ sessions, accent, selectedId, onSelect, sort, setSort, qu
           const visible = active.length + idle.length;
           const total = sessions.length;
           const filtering = visible < total;
+          const clearAll = () => {
+            setQuery('');
+            setDateRange('any');
+            setStatusFilter('all');
+            // Reset folder filter to "all folders checked" baseline.
+            const allFolders = new Set(folderCounts.keys());
+            allFolders.__seen = new Set(folderCounts.keys());
+            setFolderFilter(allFolders);
+          };
           return (
-            <span data-testid="session-count-footer" style={{
-              color: filtering ? 'rgba(215, 162, 74, 0.85)' : 'rgba(255,255,255,0.4)',
-            }}>
-              {filtering ? `showing ${visible} of ${total}` : `${total} total`}
-            </span>
+            <>
+              <span data-testid="session-count-footer" style={{
+                color: filtering ? 'rgba(215, 162, 74, 0.85)' : 'rgba(255,255,255,0.4)',
+              }}>
+                {filtering ? `showing ${visible} of ${total}` : `${total} total`}
+              </span>
+              {filtering && (
+                <button
+                  data-testid="clear-all-filters"
+                  onClick={clearAll}
+                  title="Clear search, date range, status filter, and folder filter"
+                  style={{
+                    background: 'transparent',
+                    border: '1px solid rgba(215, 162, 74, 0.35)',
+                    color: 'rgba(215, 162, 74, 0.9)',
+                    fontFamily: 'JetBrains Mono, monospace',
+                    fontSize: 9,
+                    textTransform: 'uppercase', letterSpacing: 0.6,
+                    padding: '1px 6px', borderRadius: 3,
+                    cursor: 'pointer', marginLeft: 6,
+                  }}>clear</button>
+              )}
+            </>
           );
         })()}
       </div>
