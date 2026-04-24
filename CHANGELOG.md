@@ -6,6 +6,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.2.13] — 2026-04-24
+
+### Added — `DAEMON` chip in the title bar when opt-in daemon mode is active
+- Users running with `AGENTMANAGER_DAEMON=1` now see a small amber
+  `DAEMON` chip next to the version in the title bar. Closes the
+  invisibility gap where legacy mode and daemon mode looked
+  identical in the UI even though they use different process
+  architectures under the hood.
+
 ## [1.2.12] — 2026-04-24
 
 ### Fixed — session move: race between shutil-preserved mtime and the index
