@@ -8,6 +8,14 @@ import { daemonGet, daemonPost, pidIsAlive, readPidFile } from '../../helpers/da
 
 test.describe.configure({ mode: 'serial' });
 
+// SKIPPED pending ADR-18 Phase 9 (two-binary ship).
+// /api/update/apply-ui-only and /api/update/apply-daemon currently
+// return 501 {code: DAEMON_NOT_SPLIT} by design (Phase 7 stubs).
+// Real zero-downtime UI swap requires the separate AgentManager-
+// Daemon.exe binary. Contract unit-tested in
+// tests/test_daemon_phase7_stubs.py.
+test.skip();
+
 test.describe('update flow under daemon split', () => {
   test('UI-only update → daemon pid unchanged → PTY survives', async ({ page }) => {
     const pf = readPidFile();

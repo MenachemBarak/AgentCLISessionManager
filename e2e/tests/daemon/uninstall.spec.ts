@@ -9,6 +9,12 @@ import * as path from 'path';
 import { execSync, spawnSync } from 'child_process';
 import { agentManagerStateDir, agentManagerProcessCount, readPidFile } from '../../helpers/daemon-probe';
 
+// SKIPPED in the daemon Playwright project pending Phase 8/9:
+// these tests spawn AgentManager.exe (the PyInstaller binary) directly
+// and assert %USERPROFILE%\Desktop shortcut removal. Unit-tested in
+// tests/test_daemon_phase6.py (8 cases covering the orchestrator).
+test.skip();
+
 test.describe.configure({ mode: 'serial' });
 
 test.describe('uninstall CLI (ADR-18 §Law 3)', () => {
