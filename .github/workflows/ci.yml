@@ -33,6 +33,10 @@ jobs:
       - name: Run pytest with coverage (full suite, gated at 60%)
         env:
           PYTHONIOENCODING: utf-8
+          # Tests like test_session_pin.py import `backend.app` at
+          # module top, which captures CLAUDE_HOME at import time.
+          # Point it at the fixture so those tests find seeded sessions.
+          CLAUDE_HOME: ${{ github.workspace }}/tests/fixtures/claude-home
         # T-62: gate on backend coverage. Currently 61% → floor 60%
         # to prevent regression. Target 80% — ramp plan in tickets.md.
         # test_watcher: Windows file-lock flake unrelated to coverage.
