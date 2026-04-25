@@ -15,6 +15,14 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 FIXTURE_HOME = ROOT / "tests" / "fixtures" / "claude-home"
 
+# Make `backend` importable at COLLECTION time. The narrow legacy CI
+# subset relied on the `app_module` fixture to do this, but tests like
+# `test_active_pid_reuse.py` import `backend.app` at module top, which
+# happens during pytest collection BEFORE any fixture runs. T-62
+# moved CI to the full pytest suite, so we need this earlier.
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 
 @pytest.fixture(scope="session")
 def claude_home(tmp_path_factory) -> Path:
