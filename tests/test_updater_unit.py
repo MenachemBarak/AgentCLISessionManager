@@ -5,6 +5,7 @@ backend/updater.py from ~37% baseline.
 We avoid hitting the GitHub API by patching urllib at the module level
 where check_for_updates uses it.
 """
+
 from __future__ import annotations
 
 import json
@@ -14,36 +15,46 @@ import pytest
 
 from backend import updater
 
-
 # ────────────────────────────── _version_gt ──────────────────────────────
 
-@pytest.mark.parametrize("a,b,expected", [
-    ("1.0.0", "0.9.9", True),
-    ("0.9.9", "1.0.0", False),
-    ("1.2.16", "1.2.15", True),
-    ("1.2.15", "1.2.16", False),
-    ("1.2.15", "1.2.15", False),  # equal — strict >
-    ("v1.2.15", "1.2.14", True),  # `v` prefix tolerated
-    ("1.2.15", "v1.2.14", True),
-    ("99.0.0", "1.2.15", True),
-    ("1.2.15", "99.0.0", False),
-    ("1.10.0", "1.2.0", True),    # numeric not lexicographic
-    ("malformed", "1.0.0", False),  # parse failure → False
-    ("1.0.0", "malformed", False),
-])
+
+@pytest.mark.parametrize(
+    "a,b,expected",
+    [
+        ("1.0.0", "0.9.9", True),
+        ("0.9.9", "1.0.0", False),
+        ("1.2.16", "1.2.15", True),
+        ("1.2.15", "1.2.16", False),
+        ("1.2.15", "1.2.15", False),  # equal — strict >
+        ("v1.2.15", "1.2.14", True),  # `v` prefix tolerated
+        ("1.2.15", "v1.2.14", True),
+        ("99.0.0", "1.2.15", True),
+        ("1.2.15", "99.0.0", False),
+        ("1.10.0", "1.2.0", True),  # numeric not lexicographic
+        ("malformed", "1.0.0", False),  # parse failure → False
+        ("1.0.0", "malformed", False),
+    ],
+)
 def test_version_gt(a: str, b: str, expected: bool) -> None:
     assert updater._version_gt(a, b) is expected
 
 
 # ────────────────────────────── UpdateState ──────────────────────────────
 
+
 def test_state_snapshot_default_shape() -> None:
     s = updater.UpdateState()
     snap = s.snapshot()
     # Every field the UI consumes must be present.
     for key in [
-        "currentVersion", "latestVersion", "updateAvailable", "checked",
-        "error", "downloadProgress", "staged", "restartInstructions",
+        "currentVersion",
+        "latestVersion",
+        "updateAvailable",
+        "checked",
+        "error",
+        "downloadProgress",
+        "staged",
+        "restartInstructions",
     ]:
         assert key in snap, f"missing key {key} in snapshot"
     # No data means: not staged, no update, not checked.
@@ -74,6 +85,7 @@ def test_state_snapshot_staged_flag_reflects_path() -> None:
 
 # ─────────────────────────── check_for_updates ───────────────────────────
 
+
 class _FakeResponse:
     def __init__(self, body: bytes) -> None:
         self._body = body
@@ -81,7 +93,7 @@ class _FakeResponse:
     def read(self) -> bytes:
         return self._body
 
-    def __enter__(self) -> "_FakeResponse":
+    def __enter__(self) -> _FakeResponse:
         return self
 
     def __exit__(self, *args: object) -> None:
@@ -92,11 +104,15 @@ def _mock_release_body(version: str, with_asset: bool = True) -> bytes:
     payload = {
         "tag_name": f"v{version}",
         "assets": (
-            [{
-                "name": updater.ASSET_PATTERN.format(version=version),
-                "browser_download_url": f"https://example.test/dl/{version}.exe",
-                "digest": f"sha256:{'a' * 64}",
-            }] if with_asset else []
+            [
+                {
+                    "name": updater.ASSET_PATTERN.format(version=version),
+                    "browser_download_url": f"https://example.test/dl/{version}.exe",
+                    "digest": f"sha256:{'a' * 64}",
+                }
+            ]
+            if with_asset
+            else []
         ),
     }
     return json.dumps(payload).encode("utf-8")
@@ -104,9 +120,12 @@ def _mock_release_body(version: str, with_asset: bool = True) -> bytes:
 
 def test_check_for_updates_populates_state_on_success() -> None:
     state = updater.UpdateState()
-    with mock.patch.object(updater, "STATE", state), \
-         mock.patch.object(updater.urllib.request, "urlopen",
-                           return_value=_FakeResponse(_mock_release_body("99.0.0"))):
+    with (
+        mock.patch.object(updater, "STATE", state),
+        mock.patch.object(
+            updater.urllib.request, "urlopen", return_value=_FakeResponse(_mock_release_body("99.0.0"))
+        ),
+    ):
         updater.check_for_updates()
     assert state.checked is True
     assert state.latest_version == "99.0.0"
@@ -117,9 +136,10 @@ def test_check_for_updates_populates_state_on_success() -> None:
 
 def test_check_for_updates_handles_network_error() -> None:
     state = updater.UpdateState()
-    with mock.patch.object(updater, "STATE", state), \
-         mock.patch.object(updater.urllib.request, "urlopen",
-                           side_effect=OSError("fake network error")):
+    with (
+        mock.patch.object(updater, "STATE", state),
+        mock.patch.object(updater.urllib.request, "urlopen", side_effect=OSError("fake network error")),
+    ):
         updater.check_for_updates()
     assert state.checked is True
     assert state.error is not None
@@ -128,9 +148,14 @@ def test_check_for_updates_handles_network_error() -> None:
 
 def test_check_for_updates_no_matching_asset_leaves_url_unset() -> None:
     state = updater.UpdateState()
-    with mock.patch.object(updater, "STATE", state), \
-         mock.patch.object(updater.urllib.request, "urlopen",
-                           return_value=_FakeResponse(_mock_release_body("99.0.0", with_asset=False))):
+    with (
+        mock.patch.object(updater, "STATE", state),
+        mock.patch.object(
+            updater.urllib.request,
+            "urlopen",
+            return_value=_FakeResponse(_mock_release_body("99.0.0", with_asset=False)),
+        ),
+    ):
         updater.check_for_updates()
     assert state.checked is True
     assert state.latest_version == "99.0.0"
@@ -139,11 +164,11 @@ def test_check_for_updates_no_matching_asset_leaves_url_unset() -> None:
 
 # ─────────────────────────── start_background_check ──────────────────────
 
+
 def test_start_background_check_skips_when_already_checked() -> None:
     state = updater.UpdateState()
     state.checked = True
-    with mock.patch.object(updater, "STATE", state), \
-         mock.patch.object(updater.threading, "Thread") as t:
+    with mock.patch.object(updater, "STATE", state), mock.patch.object(updater.threading, "Thread") as t:
         updater.start_background_check()
     t.assert_not_called()
 
@@ -151,8 +176,7 @@ def test_start_background_check_skips_when_already_checked() -> None:
 def test_start_background_check_spawns_when_unchecked() -> None:
     state = updater.UpdateState()
     state.checked = False
-    with mock.patch.object(updater, "STATE", state), \
-         mock.patch.object(updater.threading, "Thread") as Thread:
+    with mock.patch.object(updater, "STATE", state), mock.patch.object(updater.threading, "Thread") as Thread:
         updater.start_background_check()
     Thread.assert_called_once()
     Thread.return_value.start.assert_called_once()
