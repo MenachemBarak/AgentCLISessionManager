@@ -41,6 +41,11 @@ dependencies = [
 [project.optional-dependencies]
 # Kept for backwards compat / explicit install; pywebview is already a core dep.
 desktop = ["pywebview>=5.3"]
+# Test-only deps. Installed in CI via `pip install -e .[test]`.
+test = [
+  "pytest>=8.0",
+  "pytest-cov>=5.0",
+]
 
 [project.scripts]
 claude-sessions-viewer = "backend.cli:main"
@@ -132,8 +137,31 @@ skips = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Coverage is configured but NOT enforced in addopts so subset runs
+# (e.g. dev: `pytest tests/test_foo.py`) don't fail on coverage. The
+# CI job runs the full suite with `--cov-fail-under=60` (T-62 floor).
 addopts = "-q --ignore=tests/test_user_label_flow.py --ignore=tests/visual_check.py"
 # Playwright e2e tests need a running server + browser; they live in the same
 # tests/ dir but are excluded from the default CI run (see addopts).
 norecursedirs = ["tests/fixtures"]
 python_files = ["test_*.py"]
+
+[tool.coverage.run]
+# Line coverage only — branch coverage is more rigorous but our
+# baseline is 61% line / 58% branch and the user's directive is "80%
+# coverage". Track line coverage now; revisit branch separately.
+branch = false
+source = ["backend"]
+omit = [
+  "backend/frontend/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+  "pragma: no cover",
+  "if TYPE_CHECKING:",
+  "raise NotImplementedError",
+  "if __name__ == .__main__.:",
+]
+show_missing = true
+skip_covered = true
