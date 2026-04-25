@@ -536,13 +536,15 @@ function FolderFilter({ folderCounts, folderFilter, setFolderFilter }) {
   }
   return (
     <div style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-      <button onClick={() => setOpen((o) => !o)} style={{
-        width: '100%', padding: '8px 12px',
-        display: 'flex', alignItems: 'center', gap: 6,
-        background: 'transparent', border: 'none', cursor: 'pointer',
-        color: 'rgba(255,255,255,0.75)', fontFamily: 'inherit',
-        fontSize: 10.5, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 1,
-      }}>
+      <button onClick={() => setOpen((o) => !o)}
+        data-testid="folder-filter-toggle"
+        style={{
+          width: '100%', padding: '8px 12px',
+          display: 'flex', alignItems: 'center', gap: 6,
+          background: 'transparent', border: 'none', cursor: 'pointer',
+          color: 'rgba(255,255,255,0.75)', fontFamily: 'inherit',
+          fontSize: 10.5, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 1,
+        }}>
         <IconChevron size={11} style={{ transform: open ? 'rotate(0deg)' : 'rotate(-90deg)', transition: 'transform 120ms' }}/>
         <span>Folders</span>
         <span style={{ flex: 1 }}/>
@@ -551,10 +553,10 @@ function FolderFilter({ folderCounts, folderFilter, setFolderFilter }) {
         </span>
       </button>
       {open && (
-        <div style={{ maxHeight: 240, overflowY: 'auto', padding: '4px 8px 8px' }}>
+        <div data-testid="folder-filter-panel" style={{ maxHeight: 240, overflowY: 'auto', padding: '4px 8px 8px' }}>
           <div style={{ display: 'flex', gap: 6, padding: '4px 4px 8px' }}>
-            <button onClick={() => setAll(true)} style={miniBtn}>All</button>
-            <button onClick={() => setAll(false)} style={miniBtn}>None</button>
+            <button onClick={() => setAll(true)} data-testid="folder-filter-all" style={miniBtn}>All</button>
+            <button onClick={() => setAll(false)} data-testid="folder-filter-none" style={miniBtn}>None</button>
           </div>
           {entries.map(([folder, count]) => {
             const checked = folderFilter.has(folder);
