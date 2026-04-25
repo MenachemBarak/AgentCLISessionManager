@@ -21,7 +21,7 @@ _(none — all PRs merged or queued for next user direction)_
 
 - **T-58 Worktree spawn recipe** — out of scope until daemon split (#42) further along
 
-- **T-60 session-move full-suite flake root-cause** — needs per-spec backend isolation
+- ~~**T-60 session-move full-suite flake root-cause**~~ — **FIXED**: race between watcher's `on_deleted(src)` and the move's eager re-scan. Fix: `_evict` now compares `_INDEX[sid].path` to the deleted path before evicting, so post-move dest entries survive a stale source-delete event.
 
 - **T-62 ramp coverage 60% → 80%** — current 62% Windows / 57% Linux. Biggest gaps: app.py (56%), updater.py (55%), claude_code.py (58%), cli.py (50%). Each needs targeted unit tests.
 

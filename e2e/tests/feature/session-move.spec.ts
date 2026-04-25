@@ -15,12 +15,6 @@ import * as path from 'path';
  * mutated — every test creates and removes its own scratch session.
  */
 test.describe.configure({ mode: 'serial' });
-// Known flaky in full-suite runs due to shared _INDEX state across
-// specs. In isolation 5/5; in full suite sometimes the eager
-// re-scan races with prior-test cache state. v1.2.12's force=True
-// rebuild made this reliable in isolation — these retries absorb
-// the inter-spec race pending proper backend-per-spec isolation.
-test.describe.configure({ retries: 2 });
 
 const FIXTURE_ROOT = path.resolve(
   __dirname, '..', '..', '..', 'tests', 'fixtures', 'claude-home',
