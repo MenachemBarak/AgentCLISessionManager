@@ -43,9 +43,13 @@ function CompactDropdown({ value, options, onChange, label }) {
     return () => document.removeEventListener('mousedown', h);
   }, []);
   const current = options.find((o) => o.value === value);
+  // Stable testid prefix derived from the label so e2e can target each
+  // dropdown deterministically: e.g. label="Sort" → sort-dropdown.
+  const slug = String(label || 'dropdown').toLowerCase().replace(/\s+/g, '-');
   return (
     <div ref={ref} style={{ position: 'relative', flex: 1, minWidth: 0 }}>
       <button onClick={() => setOpen((o) => !o)}
+        data-testid={`${slug}-dropdown-button`}
         style={{
           width: '100%', padding: '5px 8px',
           background: 'rgba(255,255,255,0.04)',
@@ -66,16 +70,19 @@ function CompactDropdown({ value, options, onChange, label }) {
         <IconChevron size={11}/>
       </button>
       {open && (
-        <div style={{
-          position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0,
-          background: 'rgba(28,24,20,0.98)',
-          border: '1px solid rgba(255,255,255,0.12)',
-          borderRadius: 7, padding: 4,
-          boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
-          zIndex: 30, backdropFilter: 'blur(20px)',
-        }}>
+        <div
+          data-testid={`${slug}-dropdown-menu`}
+          style={{
+            position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0,
+            background: 'rgba(28,24,20,0.98)',
+            border: '1px solid rgba(255,255,255,0.12)',
+            borderRadius: 7, padding: 4,
+            boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
+            zIndex: 30, backdropFilter: 'blur(20px)',
+          }}>
           {options.map((o) => (
             <button key={o.value}
+              data-testid={`${slug}-dropdown-option-${o.value}`}
               onClick={() => { onChange(o.value); setOpen(false); }}
               style={{
                 width: '100%', padding: '6px 8px',
