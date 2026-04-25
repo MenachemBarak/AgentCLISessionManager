@@ -43,6 +43,9 @@ jobs:
         # gate works on both platforms. Target 80% — ramp plan in
         # tickets.md.
         # test_watcher: Windows file-lock flake unrelated to coverage.
+        # Use bash explicitly so the line-continuation backslashes work
+        # on the Windows runner (PowerShell-default would ParserError).
+        shell: bash
         run: |
           pytest tests/ --ignore=tests/test_watcher.py \
             --cov=backend --cov-report=term-missing:skip-covered \
