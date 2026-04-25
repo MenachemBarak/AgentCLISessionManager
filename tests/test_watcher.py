@@ -143,6 +143,42 @@ def test_on_deleted_directory_bulk_evicts_contained_sessions(app_module, monkeyp
     assert evicted_ids == {sid1, sid2}
 
 
+def test_evict_does_not_drop_post_move_dest(app_module, monkeypatch, tmp_path):
+    """T-60 regression: after a session move, _INDEX[sid] points at the
+    destination path. The watchdog's on_deleted for the source must NOT
+    evict that entry — otherwise the move silently disappears from the
+    UI until the next /api/rescan.
+
+    Reproduce: indexed entry's `path` is the post-move dest; an evict
+    fires for the (now-deleted) source path. The entry must survive.
+    """
+    sid = "11111111-1111-4111-8111-111111111111"
+    src_path = app_module.PROJECTS_DIR / "-old-dir" / f"{sid}.jsonl"
+    dest_dir = app_module.PROJECTS_DIR / "-new-dir"
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    dest_path = dest_dir / f"{sid}.jsonl"
+    dest_path.write_text('{"type":"user","cwd":"/new","message":{"content":"x"}}\n', encoding="utf-8")
+
+    # Simulate post-move state: _INDEX[sid] points at dest, not src.
+    app_module._INDEX[sid] = {"id": sid, "path": str(dest_path), "_mtime": 0}
+
+    captured: list[dict] = []
+    monkeypatch.setattr(app_module, "_emit_sse", lambda ev: captured.append(ev))
+
+    watcher = app_module._Watcher()
+    # Watchdog fires on_deleted for the source AFTER the move — without
+    # the path-match guard this used to delete _INDEX[sid] (the dest).
+    watcher._evict(str(src_path))
+
+    try:
+        assert sid in app_module._INDEX, (
+            "post-move dest entry must NOT be evicted by stale on_deleted " "for the source path"
+        )
+        assert captured == [], "no SSE should fire when path mismatch is detected"
+    finally:
+        dest_path.unlink(missing_ok=True)
+
+
 def test_on_moved_evicts_src_and_upserts_dest(app_module, monkeypatch, tmp_path):
     sid = "11111111-1111-4111-8111-111111111111"
     new_id = "99999999-9999-4999-8999-999999999999"

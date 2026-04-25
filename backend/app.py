@@ -1613,8 +1613,22 @@ class _Watcher(FileSystemEventHandler):
         if not _is_indexable_session_path(p):
             return
         sid = p.stem
-        if sid not in _INDEX:
+        existing = _INDEX.get(sid)
+        if not existing:
             return
+        # CRITICAL: only evict if the indexed entry actually points at the
+        # deleted path. After a session move (copy-then-unlink), the source
+        # delete fires AFTER the eager re-scan already pointed _INDEX[sid] at
+        # the destination. A naive `del _INDEX[sid]` here would silently undo
+        # the move from the UI's perspective until the next /api/rescan.
+        try:
+            indexed_path = Path(str(existing.get("path", "")))
+            if indexed_path.resolve() != p.resolve():
+                return
+        except OSError:
+            # resolve() can raise on Windows if the dest is gone too;
+            # fall through to evict in that case.
+            pass
         del _INDEX[sid]
         _emit_sse({"type": "session_deleted", "id": sid})
 
