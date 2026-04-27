@@ -9,7 +9,7 @@ sse-starlette==3.3.4
 pydantic==2.9.2
 # Native desktop window around the React UI (Edge WebView2 on Windows,
 # WebKit on macOS, WebKitGTK on Linux).
-pywebview==5.3.2
+pywebview==6.2.1
 # Windows-only — used for per-tab UI Automation focus. Skipped on Linux/mac (CI).
 uiautomation==2.0.29; platform_system == "Windows"
 comtypes==1.4.16; platform_system == "Windows"
