@@ -18,5 +18,5 @@ comtypes==1.4.16; platform_system == "Windows"
 # regresses in PyInstaller `console=False` frozen exes: cmd.exe exits
 # with STATUS_CONTROL_C_EXIT (0xC000013A) within ms of spawn. 2.0.15
 # works correctly in both dev and frozen contexts.
-pywinpty==2.0.15; platform_system == "Windows"
+pywinpty==3.0.3; platform_system == "Windows"
 ptyprocess==0.7.0; platform_system != "Windows"
