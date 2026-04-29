@@ -1,4 +1,4 @@
-fastapi==0.136.0
+fastapi==0.136.1
 # Starlette is a transitive dep via fastapi; pin floor to mitigate
 # GHSA-f96h-pmfr-66vw and GHSA-2c2j-9gv5-cj73 (both fixed in 0.40.0 / 0.47.2).
 starlette>=0.48.0
