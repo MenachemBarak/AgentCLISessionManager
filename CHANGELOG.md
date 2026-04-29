@@ -6,6 +6,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.2.19] — 2026-04-29
+
+### Added
+- Clipboard integration: Ctrl+C copies selected text in transcript pane;
+  Ctrl+C with an xterm selection copies to clipboard without sending SIGINT
+  to the PTY; Ctrl+V pastes clipboard text into the PTY (#121)
+
+### Fixed
+- Vendored all CDN dependencies (xterm.js, addon-fit, addon-web-links) so
+  the app boots correctly in offline / airgapped environments (#113)
+
 ## [1.2.17] — 2026-04-25
 
 ### Fixed — closing a pane no longer tears down the whole tab (#98)
