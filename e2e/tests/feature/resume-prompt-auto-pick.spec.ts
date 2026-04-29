@@ -45,5 +45,6 @@ test('terminal-pane auto-picks "Resume full session as-is" (v0.9.10)', async ({ 
   // sid extraction accepts both legacy (spawn.sessionId) and v1.1.0
   // shell-wrap (spawn._autoResume.sessionId) shapes — otherwise the
   // auto-pick never fires for shell-wrap tabs.
-  expect(src).toMatch(/_autoResume\?\.sessionId\s*\|\|\s*spawn\?\.sessionId/);
+  // spawnRef.current is used (not spawn directly) to avoid stale closure issues.
+  expect(src).toMatch(/_autoResume\?\.sessionId\s*\|\|\s*spawnRef\.current\?\.sessionId/);
 });

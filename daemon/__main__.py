@@ -44,6 +44,10 @@ def main() -> int:
     app.state.require_bearer_token = token
     app.state.daemon_version = __version__
 
+    from backend import updater as _updater
+
+    _updater.DAEMON_MODE = True
+
     with lock_cm:
         uvicorn.run(app, host=host, port=port, log_level=log_level)
     return 0

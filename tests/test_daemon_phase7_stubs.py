@@ -1,9 +1,8 @@
-"""Phase 7 stub tests — contract guard for the dual-asset update API.
+"""Phase 7/9 contract tests for the dual-asset update API.
 
-Asserts the two new endpoints exist and return a machine-parseable 501
-with `code=DAEMON_NOT_SPLIT` until Phase 9 ships the two-binary build.
-Locks the API shape so frontend code + e2e fixtures can target a
-stable contract today.
+Phase 7: endpoints existed as 501 stubs.
+Phase 9: apply-ui-only is real; in non-frozen/non-daemon test env it
+returns 200 {"ok": false} with a reason message instead of 501.
 """
 
 from __future__ import annotations
@@ -20,14 +19,14 @@ def client():
     return TestClient(app)
 
 
-def test_apply_ui_only_returns_501_with_reason_code(client):
+def test_apply_ui_only_endpoint_exists_and_responds(client):
+    # Phase 9: endpoint is implemented. In the test env (not frozen, not
+    # daemon mode) it returns 200 with ok=False and a message.
     r = client.post("/api/update/apply-ui-only")
-    assert r.status_code == 501
+    assert r.status_code == 200
     body = r.json()
-    # FastAPI wraps HTTPException(detail=dict) as {"detail": {...}}.
-    detail = body["detail"]
-    assert detail["code"] == "DAEMON_NOT_SPLIT"
-    assert "Phase 9" in detail["message"]
+    assert body["ok"] is False
+    assert "message" in body
 
 
 def test_apply_daemon_returns_501_with_reason_code(client):

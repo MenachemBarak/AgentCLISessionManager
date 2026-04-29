@@ -224,7 +224,7 @@ def main(argv: list[str] | None = None) -> int:
     # reads it and attaches it as Authorization on subsequent requests).
     # Legacy (non-daemon) mode is preserved by default so existing users are
     # unaffected until we flip the default in v1.3.0.
-    if os.environ.get("AGENTMANAGER_DAEMON") == "1":
+    if os.environ.get("AGENTMANAGER_DAEMON", "1") != "0":
         rc = _launch_daemon_mode(webview)
         if rc is not None:
             return rc
@@ -256,6 +256,16 @@ def main(argv: list[str] | None = None) -> int:
 
     # Window closed → process exits; daemon thread dies with it.
     return 0
+
+
+class _PywebviewApi:
+    def close_for_update(self) -> None:
+        try:
+            import webview as _wv
+
+            _wv.destroy()  # type: ignore[attr-defined]
+        except Exception:
+            pass
 
 
 def _launch_daemon_mode(webview_mod: Any) -> int | None:
@@ -308,6 +318,7 @@ def _launch_daemon_mode(webview_mod: Any) -> int | None:
         height=900,
         resizable=True,
         confirm_close=False,
+        js_api=_PywebviewApi(),
     )
     webview_mod.start()
     return 0

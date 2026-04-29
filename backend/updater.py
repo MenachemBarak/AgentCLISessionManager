@@ -34,6 +34,10 @@ from backend.__version__ import __version__
 
 log = logging.getLogger(__name__)
 
+# Set to True by daemon/__main__.py at startup so updater knows it's
+# running inside the long-lived daemon process (Phase 9 two-binary split).
+DAEMON_MODE = False
+
 RELEASES_API = "https://api.github.com/repos/MenachemBarak/AgentCLISessionManager/releases/latest"
 # From v1.0.0 onwards the product is branded "AgentManager". Release
 # workflow publishes BOTH asset names for the transition window so
@@ -203,7 +207,12 @@ def download_and_stage() -> dict[str, str | bool]:
         return {"ok": False, "message": "self-update only available in the packaged .exe"}
 
     exe_path = Path(sys.executable).resolve()
-    stage_path = exe_path.with_suffix(exe_path.suffix + ".new")
+    if DAEMON_MODE:
+        from daemon.bootstrap import state_dir
+
+        stage_path = state_dir() / "staged-ui.exe"
+    else:
+        stage_path = exe_path.with_suffix(exe_path.suffix + ".new")
 
     # Download with progress
     try:
@@ -375,6 +384,49 @@ def apply_update() -> dict[str, str | bool | int]:
             "logPath": str(log_path),
             "pid": pid,
         }
+
+
+def apply_ui_only_update() -> dict[str, str | bool | int]:
+    """Swap only the UI exe. Daemon keeps running. PTYs survive."""
+    import platform as _platform
+
+    if _platform.system() != "Windows":
+        return {"ok": False, "message": "apply is Windows-only for now"}
+    if not getattr(sys, "frozen", False):
+        return {"ok": False, "message": "self-apply only available in the packaged .exe"}
+    if not DAEMON_MODE:
+        return {"ok": False, "message": "use /api/update/apply in non-daemon mode"}
+
+    with STATE.lock:
+        staged = STATE.staged_path
+    if not staged or not Path(staged).exists():
+        return {"ok": False, "message": "no staged update"}
+
+    # UI exe lives next to daemon exe
+    daemon_exe = Path(sys.executable).resolve()
+    ui_exe = daemon_exe.parent / "AgentManager.exe"
+    if not ui_exe.exists():
+        return {"ok": False, "message": f"UI exe not found: {ui_exe}"}
+
+    with _APPLY_LOCK:
+        staged_path = Path(staged).resolve()
+        pid = os.getpid()  # for logging only
+        log_path = daemon_exe.parent / "update-swap-ui.log"
+        script_dir = Path(tempfile.gettempdir()) / "agentmanager"
+        script_dir.mkdir(parents=True, exist_ok=True)
+        script_path = script_dir / f"update-swap-ui-{pid}.cmd"
+        script_path.write_text(
+            _windows_swap_script(ui_exe, staged_path, 0, log_path),
+            encoding="ascii",
+        )
+        creationflags = 0x08000000 | 0x00000008 | 0x00000200
+        subprocess.Popen(
+            ["cmd.exe", "/c", str(script_path)],
+            creationflags=creationflags,
+            close_fds=True,
+            cwd=str(script_dir),
+        )
+        return {"ok": True, "message": "UI swap helper launched; close the UI window to apply"}
 
 
 def remove_stale_old_file() -> None:

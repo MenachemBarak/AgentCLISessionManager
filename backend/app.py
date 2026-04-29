@@ -729,19 +729,11 @@ def update_apply() -> dict[str, Any]:
 def update_apply_ui_only() -> dict[str, Any]:
     """Swap the UI exe only; leave the daemon running (Phase 9 payoff).
 
-    Today: stub that returns 501 with a machine-parseable reason code
-    so the Phase-1 e2e test can assert the contract is in place.
+    The daemon keeps running and PTY sessions survive. The UI window is
+    expected to close shortly after this returns so the swap script can
+    rename the locked exe.
     """
-    raise HTTPException(
-        status_code=501,
-        detail={
-            "code": "DAEMON_NOT_SPLIT",
-            "message": (
-                "UI-only updates require the two-binary ship (Phase 9). "
-                "Current builds package UI+daemon in one exe; use /api/update/apply."
-            ),
-        },
-    )
+    return dict(updater.apply_ui_only_update())
 
 
 @app.post("/api/update/apply-daemon")

@@ -108,6 +108,14 @@ jobs:
           cp "dist/AgentManager-${VER}-windows-x64.exe" \
              "dist/claude-sessions-viewer-${VER}-windows-x64.exe"
           ls -la dist/
+      - name: Build daemon exe (PyInstaller)
+        run: pyinstaller pyinstaller-daemon.spec --noconfirm --clean
+      - name: Rename daemon exe with version
+        shell: bash
+        run: |
+          VER="${{ needs.build.outputs.version }}"
+          mv "dist/AgentManager-Daemon.exe" "dist/AgentManager-Daemon-${VER}-windows-x64.exe"
+          ls -la dist/AgentManager-Daemon-*.exe
       - name: Smoke-test exe boots
         shell: bash
         run: |
@@ -139,6 +147,7 @@ jobs:
           name: windows-exe
           path: |
             dist/AgentManager-*-windows-x64.exe
+            dist/AgentManager-Daemon-*-windows-x64.exe
             dist/claude-sessions-viewer-*-windows-x64.exe
 
       # ADR-18 / Task #48: build a real Windows installer (Inno Setup)
@@ -310,5 +319,6 @@ jobs:
             dist/claude_sessions_viewer-*.tar.gz \
             dist/claude-sessions-viewer-*-windows.zip \
             dist/AgentManager-*-windows-x64.exe \
+            dist/AgentManager-Daemon-*-windows-x64.exe \
             dist/claude-sessions-viewer-*-windows-x64.exe \
             dist/AgentManager-*-setup.exe
