@@ -36,7 +36,7 @@ export default defineConfig({
     : {
         command: 'python -m backend.cli --server-only --port 8769 --no-browser',
         url: 'http://127.0.0.1:8769/api/status',
-        reuseExistingServer: !process.env.CI,
+        reuseExistingServer: false,
         timeout: 30_000,
         cwd: '..',
         env: {
