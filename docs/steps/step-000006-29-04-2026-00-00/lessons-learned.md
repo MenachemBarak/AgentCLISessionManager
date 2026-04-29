@@ -61,7 +61,7 @@ User noticed because the hook error was visible in the screenshot.
 
 **Root cause:** The `/api/status` endpoint returned 200 but the frontend JavaScript failed to load because CDN resources were unavailable. The test suite never opened a real browser.
 
-**Fix applied (v1.2.18):** Vendored all CDN deps into `backend/frontend/vendor/`. 
+**Fix applied (v1.2.18):** Vendored all CDN deps into `backend/frontend/vendor/`.
 
 **How a future agent avoids this:** For any UI change or release, open the app in a real browser (or use Playwright to assert a known DOM element renders) before declaring done. An API 200 is NOT proof the UI works.
 
