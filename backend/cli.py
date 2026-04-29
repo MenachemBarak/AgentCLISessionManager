@@ -263,7 +263,7 @@ class _PywebviewApi:
         try:
             import webview as _wv
 
-            _wv.destroy()
+            _wv.destroy()  # type: ignore[attr-defined]
         except Exception:
             pass
 
