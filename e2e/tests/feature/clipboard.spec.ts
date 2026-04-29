@@ -52,65 +52,57 @@ test.describe('clipboard — transcript', () => {
 });
 
 test.describe('clipboard — terminal (xterm.js)', () => {
-  test('Ctrl+C with terminal selection copies text and does not send SIGINT', async ({ page, context }) => {
+  test('new terminal tab renders xterm canvas (handler wired on open)', async ({ page, context }) => {
     await context.grantPermissions(['clipboard-read', 'clipboard-write']);
-
     await page.goto('/');
     await expect(page.getByTestId('session-search-input')).toBeVisible({ timeout: 10_000 });
 
-    // Seed clipboard with a sentinel so we can verify Ctrl+C replaced it.
-    await page.evaluate(async () => navigator.clipboard.writeText('__sentinel__'));
+    // Click "New terminal" — this triggers TerminalPane mount which calls
+    // term.open() and attaches our clipboard handler.
+    await page.locator('[title*="New terminal"], [title*="Ctrl+Shift+T"]').first().click();
 
-    // Open a terminal tab (new session via button if available, else verify
-    // that attachCustomKeyEventHandler is wired up by inspecting xterm internals).
-    // We verify the handler is registered without needing a live PTY.
-    const handlerPresent = await page.evaluate(() => {
-      // xterm.js exposes the custom key handler count via internal API.
-      // We check the DOM for an xterm canvas element — if one exists the
-      // Terminal object was created and the handler was attached.
-      return !!document.querySelector('.xterm');
-    });
-
-    // If there's an active terminal pane, test clipboard copy.
-    if (handlerPresent) {
-      // Select all text in the terminal via xterm's select method.
-      const hasSelection = await page.evaluate(() => {
-        const xterm = (window as any).__xtermInstances?.[0];
-        if (!xterm) return false;
-        xterm.selectAll();
-        return xterm.hasSelection();
-      });
-
-      if (hasSelection) {
-        await page.keyboard.press('Control+c');
-        const clipboard = await page.evaluate(async () => {
-          try { return await navigator.clipboard.readText(); } catch { return '__sentinel__'; }
-        });
-        // If a selection was copied, the sentinel should be gone.
-        expect(clipboard).not.toBe('__sentinel__');
-      }
-    }
-
-    // Core contract: xterm canvas must render (regression guard).
-    // Actual copy/paste behaviour is covered by the handler logic test below.
+    // Canvas renders → Terminal() ran → attachCustomKeyEventHandler was called.
+    await expect(page.locator('.xterm-screen canvas').first()).toBeVisible({ timeout: 8_000 });
   });
 
-  test('clipboard handler is attached to xterm instance on terminal open', async ({ page, context }) => {
+  test('Ctrl+C with xterm selection copies text, does not send SIGINT to PTY', async ({ page, context }) => {
     await context.grantPermissions(['clipboard-read', 'clipboard-write']);
     await page.goto('/');
     await expect(page.getByTestId('session-search-input')).toBeVisible({ timeout: 10_000 });
 
-    // Open a new terminal tab if the button exists.
-    const newTabBtn = page.locator('[title*="New terminal"], [title*="Ctrl+Shift+T"]');
-    if (await newTabBtn.count() > 0) {
-      await newTabBtn.first().click();
-      // Wait for xterm canvas.
-      await page.waitForSelector('.xterm-screen canvas', { timeout: 8_000 });
+    // Open terminal and wait for PTY ready (cursor visible in canvas).
+    await page.locator('[title*="New terminal"], [title*="Ctrl+Shift+T"]').first().click();
+    await expect(page.locator('.xterm-screen canvas').first()).toBeVisible({ timeout: 8_000 });
 
-      // Verify xterm rendered — means our Terminal() constructor ran and
-      // attachCustomKeyEventHandler was called.
-      const canvas = page.locator('.xterm-screen canvas');
-      await expect(canvas).toBeVisible();
-    }
+    // Seed clipboard so we can tell whether Ctrl+C changed it.
+    await page.evaluate(async () => navigator.clipboard.writeText('__before__'));
+
+    // Type a unique marker — it echoes in the terminal output.
+    const marker = 'CLIPBOARD-TEST-MARKER';
+    await page.keyboard.type(marker);
+    // Wait a tick for echo, then select the typed text via mouse drag on the canvas.
+    await page.waitForTimeout(300);
+
+    // Use xterm's selectAll via the exposed Terminal API on the window.
+    // If selectAll isn't available, Ctrl+A in xterm selects all.
+    await page.evaluate(() => {
+      // xterm 5 exposes selectAll on the Terminal instance bound to .xterm
+      const host = document.querySelector('.xterm') as HTMLElement | null;
+      if (!host) return;
+      // Access the Terminal instance via the internal __xterm__ property xterm sets.
+      const term = (host as any)._core?._terminal ?? (host as any).__xterm__;
+      term?.selectAll?.();
+    });
+    await page.waitForTimeout(100);
+
+    // Ctrl+C: our handler copies selection to clipboard (not SIGINT).
+    await page.keyboard.press('Control+c');
+
+    const after = await page.evaluate(async () => {
+      try { return await navigator.clipboard.readText(); } catch { return '__before__'; }
+    });
+
+    // Clipboard must have changed — selection was copied, not __before__.
+    expect(after).not.toBe('__before__');
   });
 });
