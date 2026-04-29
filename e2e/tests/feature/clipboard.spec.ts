@@ -23,6 +23,10 @@ test.describe('clipboard — transcript', () => {
     await firstRow.waitFor({ state: 'visible', timeout: 10_000 });
     await firstRow.click();
 
+    // Ensure the transcript tab is active — a prior spec may have left a terminal
+    // tab active, which sets display:none on the transcript pane via activeId check.
+    await page.getByTestId('right-tab-transcript').click();
+
     // Wait for at least one message element (data-msg-index is set on every message div).
     const msgContainer = page.locator('[data-msg-index]').first();
     await msgContainer.waitFor({ state: 'visible', timeout: 8_000 });
