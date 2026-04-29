@@ -6,6 +6,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.3.1] — 2026-04-29
+
+### Fixed
+- Auto-update no longer leaves the app un-launchable after swap: when
+  `AgentManager-Daemon.exe` is absent (e.g. after a legacy-path auto-update
+  from v1.2.x), the UI now falls back to in-process mode instead of timing
+  out 15 s then exiting silently (#125)
+- Auto-update now downloads and installs `AgentManager-Daemon.exe` alongside
+  the UI exe so daemon mode is available after the first update that includes
+  it (#125)
+
 ## [1.3.0] — 2026-04-29
 
 ### Added

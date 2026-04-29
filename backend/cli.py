@@ -291,7 +291,23 @@ def _launch_daemon_mode(webview_mod: Any) -> int | None:
         )
         return 3
     if state == "absent":
-        daemon_argv = [sys.executable, "-m", "daemon"]
+        if getattr(sys, "frozen", False):
+            # Frozen exe: daemon is a separate binary installed alongside us.
+            daemon_exe = Path(sys.executable).parent / "AgentManager-Daemon.exe"
+            if not daemon_exe.exists():
+                # Daemon binary missing (e.g. auto-update only swapped the UI
+                # exe). Fall back to legacy in-process mode so the app still
+                # opens instead of hanging 15 s then dying.
+                print(
+                    f"daemon: {daemon_exe.name} not found next to {Path(sys.executable).name} "
+                    "— falling back to legacy in-process mode. "
+                    "Re-install via the setup.exe to restore daemon mode.",
+                    file=sys.stderr,
+                )
+                return None
+            daemon_argv = [str(daemon_exe)]
+        else:
+            daemon_argv = [sys.executable, "-m", "daemon"]
         spawn_detached(daemon_argv)
         if not wait_for_health(port, timeout=15.0):
             print(

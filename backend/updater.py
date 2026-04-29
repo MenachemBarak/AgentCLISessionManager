@@ -49,6 +49,7 @@ ASSET_PATTERN = "AgentManager-{version}-windows-x64.exe"
 # name yet (in practice only relevant if a user installs v1.0.0 and
 # then downgrades manually). Not used for normal checks.
 LEGACY_ASSET_PATTERN = "claude-sessions-viewer-{version}-windows-x64.exe"
+DAEMON_ASSET_PATTERN = "AgentManager-Daemon-{version}-windows-x64.exe"
 
 
 class UpdateState:
@@ -60,10 +61,13 @@ class UpdateState:
         self.latest_version: str | None = None
         self.latest_url: str | None = None
         self.latest_digest: str | None = None  # sha256:... from API
+        self.daemon_url: str | None = None  # daemon exe asset URL (v1.3.0+)
+        self.daemon_digest: str | None = None
         self.checked: bool = False
         self.error: str | None = None
         self.download_progress: int = 0  # 0-100
         self.staged_path: str | None = None  # path to .new file once downloaded
+        self.daemon_staged_path: str | None = None  # daemon staged alongside UI
         self.restart_instructions: str | None = None
 
     def snapshot(self) -> dict[str, str | int | bool | None]:
@@ -118,15 +122,24 @@ def check_for_updates() -> None:
 
     latest_tag: str = body.get("tag_name", "")
     latest_ver = latest_tag.lstrip("v")
+    assets = body.get("assets") or []
     expected_name = ASSET_PATTERN.format(version=latest_ver)
-    asset = next((a for a in body.get("assets") or [] if a.get("name") == expected_name), None)
+    asset = next((a for a in assets if a.get("name") == expected_name), None)
+    daemon_name = DAEMON_ASSET_PATTERN.format(version=latest_ver)
+    daemon_asset = next((a for a in assets if a.get("name") == daemon_name), None)
     with STATE.lock:
         STATE.latest_version = latest_ver or None
         STATE.checked = True
         if asset is not None:
             STATE.latest_url = asset.get("browser_download_url")
             STATE.latest_digest = asset.get("digest")
-    log.info("update check: current=%s latest=%s asset=%s", __version__, latest_ver, bool(asset))
+        if daemon_asset is not None:
+            STATE.daemon_url = daemon_asset.get("browser_download_url")
+            STATE.daemon_digest = daemon_asset.get("digest")
+    log.info(
+        "update check: current=%s latest=%s asset=%s daemon_asset=%s",
+        __version__, latest_ver, bool(asset), bool(daemon_asset),
+    )
 
 
 def start_background_check() -> None:
@@ -181,14 +194,58 @@ def force_recheck() -> dict[str, str | int | bool | None]:
     return STATE.snapshot()
 
 
-def download_and_stage() -> dict[str, str | bool]:
-    """Download the new exe next to the running one as `.new`.
+def _download_file(url: str, dest: Path, progress_weight: float = 1.0) -> str | None:
+    """Download `url` → `dest`. Returns error message or None on success.
 
-    On success, renames the live exe to `.old` and `.new` to the
-    original name — caller (`/api/update/apply`) prompts the user
-    to restart. File renames on Windows can happen while the exe is
-    running as long as we use `MoveFileEx` with MOVEFILE_DELAY_UNTIL_REBOOT
-    OR we accept the brief downtime window.
+    `progress_weight` (0–1) scales how much of STATE.download_progress
+    this download consumes (used when downloading multiple assets).
+    """
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": f"claude-sessions-viewer/{__version__}"})
+        # nosec B310 — URL came from GitHub releases API we already trusted
+        with urllib.request.urlopen(req, timeout=60) as r, open(dest, "wb") as f:  # noqa: S310
+            total = int(r.headers.get("Content-Length", "0"))
+            read = 0
+            while True:
+                chunk = r.read(1 << 16)
+                if not chunk:
+                    break
+                f.write(chunk)
+                read += len(chunk)
+                if total:
+                    with STATE.lock:
+                        STATE.download_progress = min(
+                            99, int(read * 100 / total * progress_weight)
+                        )
+    except Exception as e:  # noqa: BLE001
+        dest.unlink(missing_ok=True)
+        return f"download failed: {e}"
+    return None
+
+
+def _verify_digest(path: Path, expected_digest: str | None) -> str | None:
+    """Return error message if digest doesn't match, None on success/skip."""
+    if not expected_digest or ":" not in expected_digest:
+        return None
+    algo, expected_hex = expected_digest.split(":", 1)
+    if algo.lower() != "sha256":
+        return None
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    actual_hex = h.hexdigest()
+    if actual_hex.lower() != expected_hex.lower():
+        path.unlink(missing_ok=True)
+        return f"sha256 mismatch (expected {expected_hex[:16]}…, got {actual_hex[:16]}…)"
+    return None
+
+
+def download_and_stage() -> dict[str, str | bool]:
+    """Download the new UI exe (and daemon exe if present) next to the
+    running one as `.new` siblings.
+
+    The swap helper renames them atomically on next restart.
 
     Returns {ok, message, restartNeeded}.
     """
@@ -196,6 +253,8 @@ def download_and_stage() -> dict[str, str | bool]:
         url = STATE.latest_url
         expected_digest = STATE.latest_digest
         latest = STATE.latest_version
+        daemon_url = STATE.daemon_url
+        daemon_digest = STATE.daemon_digest
 
     if not url or not latest:
         return {"ok": False, "message": "no update metadata; run check first"}
@@ -214,50 +273,41 @@ def download_and_stage() -> dict[str, str | bool]:
     else:
         stage_path = exe_path.with_suffix(exe_path.suffix + ".new")
 
-    # Download with progress
-    try:
-        req = urllib.request.Request(url, headers={"User-Agent": f"claude-sessions-viewer/{__version__}"})
-        # nosec B310 — URL came from GitHub releases API we already trusted
-        with urllib.request.urlopen(req, timeout=60) as r, open(stage_path, "wb") as f:  # noqa: S310
-            total = int(r.headers.get("Content-Length", "0"))
-            read = 0
-            while True:
-                chunk = r.read(1 << 16)
-                if not chunk:
-                    break
-                f.write(chunk)
-                read += len(chunk)
-                if total:
-                    with STATE.lock:
-                        STATE.download_progress = min(99, int(read * 100 / total))
-    except Exception as e:  # noqa: BLE001
+    # Download UI exe (takes ~50% of progress bar when daemon also downloads)
+    ui_weight = 0.5 if (daemon_url and not DAEMON_MODE) else 1.0
+    err = _download_file(url, stage_path, progress_weight=ui_weight)
+    if err:
         with STATE.lock:
-            STATE.error = f"download failed: {e}"
+            STATE.error = err
             STATE.download_progress = 0
-        try:
-            stage_path.unlink(missing_ok=True)
-        except Exception:  # noqa: BLE001
-            pass
-        return {"ok": False, "message": f"download failed: {e}"}
+        return {"ok": False, "message": err}
 
-    # Verify digest if the API published one (format: "sha256:<hex>")
-    if expected_digest and ":" in expected_digest:
-        algo, expected_hex = expected_digest.split(":", 1)
-        if algo.lower() == "sha256":
-            h = hashlib.sha256()
-            with open(stage_path, "rb") as f:
-                for chunk in iter(lambda: f.read(1 << 20), b""):
-                    h.update(chunk)
-            actual_hex = h.hexdigest()
-            if actual_hex.lower() != expected_hex.lower():
-                stage_path.unlink(missing_ok=True)
-                return {
-                    "ok": False,
-                    "message": f"sha256 mismatch (expected {expected_hex[:16]}…, got {actual_hex[:16]}…)",
-                }
+    err = _verify_digest(stage_path, expected_digest)
+    if err:
+        return {"ok": False, "message": err}
+
+    # Also download daemon exe when in legacy (non-daemon) mode so the
+    # update installs the daemon alongside the new UI (v1.3.0+ requirement).
+    daemon_staged: Path | None = None
+    if daemon_url and not DAEMON_MODE:
+        daemon_staged = exe_path.parent / "AgentManager-Daemon.exe.new"
+        with STATE.lock:
+            STATE.download_progress = 50
+        err = _download_file(daemon_url, daemon_staged, progress_weight=0.5)
+        if err:
+            log.warning("daemon exe download failed (non-fatal): %s", err)
+            daemon_staged.unlink(missing_ok=True)
+            daemon_staged = None
+        else:
+            d_err = _verify_digest(daemon_staged, daemon_digest)
+            if d_err:
+                log.warning("daemon exe digest mismatch (non-fatal): %s", d_err)
+                daemon_staged.unlink(missing_ok=True)
+                daemon_staged = None
 
     with STATE.lock:
         STATE.staged_path = str(stage_path)
+        STATE.daemon_staged_path = str(daemon_staged) if daemon_staged else None
         STATE.download_progress = 100
         STATE.restart_instructions = (
             f"Update downloaded to {stage_path.name}. Close this app and rename "
@@ -275,7 +325,13 @@ def download_and_stage() -> dict[str, str | bool]:
 _APPLY_LOCK = threading.Lock()
 
 
-def _windows_swap_script(exe_path: Path, staged_path: Path, pid: int, log_path: Path) -> str:
+def _windows_swap_script(
+    exe_path: Path,
+    staged_path: Path,
+    pid: int,
+    log_path: Path,
+    daemon_staged_path: Path | None = None,
+) -> str:
     """Build the one-shot .cmd that waits for this process to exit, swaps
     the files, relaunches, and self-deletes.
 
@@ -294,9 +350,25 @@ def _windows_swap_script(exe_path: Path, staged_path: Path, pid: int, log_path: 
     The `pid` is retained only as a log breadcrumb — the loop itself does
     not depend on it, which is what makes this reliable across cmd
     versions.
+
+    `daemon_staged_path`: if provided, also atomically installs the daemon
+    exe alongside the UI exe. Non-fatal if this rename fails.
     """
     # exe_path, staged_path come from Path.resolve(); pid is an int.
     # No user-controlled strings enter this template.
+    daemon_install = ""
+    if daemon_staged_path is not None:
+        daemon_exe_path = exe_path.parent / "AgentManager-Daemon.exe"
+        daemon_install = (
+            f'echo [%DATE% %TIME%] installing daemon exe >> "%LOG%"\r\n'
+            f'if exist "{daemon_exe_path}" del /F /Q "{daemon_exe_path}" >nul 2>&1\r\n'
+            f'ren "{daemon_staged_path}" "{daemon_exe_path.name}" >nul 2>&1\r\n'
+            f"if %ERRORLEVEL% NEQ 0 (\r\n"
+            f'  echo [%DATE% %TIME%] WARNING: daemon exe install failed (non-fatal) >> "%LOG%"\r\n'
+            f") else (\r\n"
+            f'  echo [%DATE% %TIME%] daemon exe installed >> "%LOG%"\r\n'
+            f")\r\n"
+        )
     return (
         f"@echo off\r\n"
         f'set "LOG={log_path}"\r\n'
@@ -323,7 +395,8 @@ def _windows_swap_script(exe_path: Path, staged_path: Path, pid: int, log_path: 
         f'  ren "{exe_path}.old" "{exe_path.name}"\r\n'
         f"  exit /B 2\r\n"
         f")\r\n"
-        f'echo [%DATE% %TIME%] relaunching >> "%LOG%"\r\n'
+        + daemon_install
+        + f'echo [%DATE% %TIME%] relaunching >> "%LOG%"\r\n'
         f'start "" "{exe_path}"\r\n'
         f'(goto) 2>nul & del "%~f0"\r\n'
     )
@@ -352,9 +425,13 @@ def apply_update() -> dict[str, str | bool | int]:
     if not staged or not Path(staged).exists():
         return {"ok": False, "message": "no staged update; call /api/update/download first"}
 
+    with STATE.lock:
+        daemon_staged = STATE.daemon_staged_path
+
     with _APPLY_LOCK:
         exe_path = Path(sys.executable).resolve()
         staged_path = Path(staged).resolve()
+        daemon_staged_path = Path(daemon_staged).resolve() if daemon_staged and Path(daemon_staged).exists() else None
         pid = os.getpid()
         log_path = exe_path.parent / "update-swap.log"
 
@@ -363,7 +440,7 @@ def apply_update() -> dict[str, str | bool | int]:
         script_dir.mkdir(parents=True, exist_ok=True)
         script_path = script_dir / f"update-swap-{pid}.cmd"
         script_path.write_text(
-            _windows_swap_script(exe_path, staged_path, pid, log_path),
+            _windows_swap_script(exe_path, staged_path, pid, log_path, daemon_staged_path),
             encoding="ascii",
         )
 
