@@ -52,7 +52,8 @@ test.describe('clipboard — transcript', () => {
       try { return await navigator.clipboard.readText(); } catch { return ''; }
     });
 
-    expect(clipboard).toBe(selectedText);
+    // Windows clipboard normalises \n → \r\n on readText(); compare after stripping \r.
+    expect(clipboard.replace(/\r\n/g, '\n')).toBe(selectedText.replace(/\r\n/g, '\n'));
   });
 });
 
