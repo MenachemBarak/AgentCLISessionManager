@@ -318,7 +318,7 @@ jobs:
             dist/claude_sessions_viewer-*.whl \
             dist/claude_sessions_viewer-*.tar.gz \
             dist/claude-sessions-viewer-*-windows.zip \
-            dist/AgentManager-*-windows-x64.exe \
+            dist/AgentManager-[0-9]*-windows-x64.exe \
             dist/AgentManager-Daemon-*-windows-x64.exe \
             dist/claude-sessions-viewer-*-windows-x64.exe \
             dist/AgentManager-*-setup.exe
