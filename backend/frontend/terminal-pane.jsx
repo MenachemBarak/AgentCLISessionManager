@@ -123,6 +123,23 @@ function TerminalPane({ spawn, onExit, onReady, onPtyReady, className, paneId })
   const ptyIdNotFoundRef = React.useRef(false);
   const [status, setStatusState] = React.useState('connecting'); // connecting|ready|exited|error
   const [error, setError] = React.useState(null);
+  // Incremented when ptyId reattach fails and we need a fresh spawn.
+  // This is the ONLY way the effect re-runs for fresh-spawn-after-fail,
+  // because ptyId is excluded from the effect key (see spawnNonce below).
+  const [freshSpawnCount, setFreshSpawnCount] = React.useState(0);
+
+  // Always-current ref so the effect can read the latest spawn without
+  // ptyId changes re-triggering the effect.
+  const spawnRef = React.useRef(spawn);
+  spawnRef.current = spawn;
+
+  // Effect key: spawn identity WITHOUT ptyId.  Adding ptyId (from onPtyReady)
+  // must NOT restart the WS — doing so closes the WS which destroys the PTY
+  // under Phase-5 rules (fresh-spawn PTYs are torn down on WS close).
+  const spawnNonce = React.useMemo(() => {
+    const { ptyId: _, ...rest } = spawn || {};
+    return JSON.stringify(rest);
+  }, [spawn]);
 
   // Keep statusRef in sync with state on every update
   const setStatus = React.useCallback((s) => {
@@ -274,16 +291,17 @@ function TerminalPane({ spawn, onExit, onReady, onPtyReady, className, paneId })
       ws.addEventListener('open', () => {
         const cols = term.cols;
         const rows = term.rows;
+        const currentSpawn = spawnRef.current;
         // Reattach if we have a ptyId; fresh spawn otherwise (strip ptyId field)
-        if (spawn && spawn.ptyId) {
-          const msg = { type: 'spawn', ptyId: spawn.ptyId, cols, rows };
+        if (currentSpawn && currentSpawn.ptyId) {
+          const msg = { type: 'spawn', ptyId: currentSpawn.ptyId, cols, rows };
           console.log('[pty] → spawn (reattach)', msg);
           ws.send(JSON.stringify(msg));
         } else {
           // Strip any ptyId from a prior session — this is a fresh spawn
           const spawnMsg = { type: 'spawn', cols, rows };
-          if (spawn) {
-            const { ptyId: _ignored, ...rest } = spawn;
+          if (currentSpawn) {
+            const { ptyId: _ignored, ...rest } = currentSpawn;
             Object.assign(spawnMsg, rest);
           }
           console.log('[pty] → spawn', spawnMsg);
@@ -311,7 +329,7 @@ function TerminalPane({ spawn, onExit, onReady, onPtyReady, className, paneId })
             // so claude takes over the PTY. When the user later runs
             // `/exit`, claude quits and the shell prompt returns — the
             // tab stays alive and reusable.
-            const autoResume = spawn?._autoResume;
+            const autoResume = spawnRef.current?._autoResume;
             if (
               autoResume?.sessionId
               && msg.id
@@ -342,7 +360,7 @@ function TerminalPane({ spawn, onExit, onReady, onPtyReady, className, paneId })
             // startup handshake.
             // Accepts either the legacy session spawn shape (spawn.sessionId,
             // pre-v1.1.0) or the shell-wrap shape (spawn._autoResume.sessionId).
-            const sid = spawn?._autoResume?.sessionId || spawn?.sessionId;
+            const sid = spawnRef.current?._autoResume?.sessionId || spawnRef.current?.sessionId;
             if (
               sid
               && window._restartPingPending.has(sid)
@@ -379,7 +397,7 @@ function TerminalPane({ spawn, onExit, onReady, onPtyReady, className, paneId })
             // (spawn.sessionId) and v1.1.0 shell-wrap (spawn._autoResume.
             // sessionId) so the auto-pick fires regardless of which path
             // seeded the pane.
-            const sid = spawn?._autoResume?.sessionId || spawn?.sessionId;
+            const sid = spawnRef.current?._autoResume?.sessionId || spawnRef.current?.sessionId;
             if (
               sid
               && typeof data === 'string'
@@ -409,9 +427,10 @@ function TerminalPane({ spawn, onExit, onReady, onPtyReady, className, paneId })
             // signal the parent so it can clear the ptyId and retry a
             // fresh spawn. Don't set error status here — the effect will
             // rerun once spawn is updated.
-            if (spawn && spawn.ptyId && String(msg.message || '').includes('not found')) {
+            if (spawnRef.current && spawnRef.current.ptyId && String(msg.message || '').includes('not found')) {
               ptyIdNotFoundRef.current = true;
-              onPtyReady && onPtyReady(null);
+              onPtyReady && onPtyReady(null); // clears ptyId from persisted layout
+              setFreshSpawnCount((n) => n + 1); // triggers effect re-run for fresh spawn
               return;
             }
             setStatus('error');
@@ -428,7 +447,7 @@ function TerminalPane({ spawn, onExit, onReady, onPtyReady, className, paneId })
       });
 
       ws.addEventListener('close', (ev) => {
-        if (ptyIdNotFoundRef.current) return; // effect will rerun after spawn update
+        if (ptyIdNotFoundRef.current) return; // setFreshSpawnCount triggers re-run instead
         if (disposedRef.current) return;
         console.log('[pty] ws closed', ev.code, ev.reason);
         if (statusRef.current === 'exited') return;
@@ -482,8 +501,8 @@ function TerminalPane({ spawn, onExit, onReady, onPtyReady, className, paneId })
       termRef.current = null;
       fitRef.current = null;
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps  — spawn change should remount
-  }, [JSON.stringify(spawn)]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps  — spawnNonce excludes ptyId intentionally
+  }, [spawnNonce, freshSpawnCount]);
 
   // Status ribbon — tiny, non-intrusive.
   const ribbon = (() => {
