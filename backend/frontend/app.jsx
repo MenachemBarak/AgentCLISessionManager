@@ -18,6 +18,45 @@ const DEFAULT_TWEAKS = /*EDITMODE-BEGIN*/{
   "liveOn": true
 }/*EDITMODE-END*/;
 
+function DaemonDisconnectedBanner() {
+  const [disconnected, setDisconnected] = React.useState(false);
+  React.useEffect(() => {
+    if (!window._daemonToken) return;
+    const check = async () => {
+      try {
+        const r = await fetch('/api/health', { signal: AbortSignal.timeout(2000) });
+        setDisconnected(!r.ok);
+      } catch {
+        setDisconnected(true);
+      }
+    };
+    const id = setInterval(check, 5000);
+    check();
+    return () => clearInterval(id);
+  }, []);
+  if (!disconnected) return null;
+  return (
+    <div data-testid="daemon-disconnected-banner" style={{
+      flexShrink: 0, padding: '6px 14px',
+      display: 'flex', alignItems: 'center', gap: 10,
+      background: 'rgba(200,90,90,0.12)',
+      borderBottom: '1px solid rgba(200,90,90,0.3)',
+      fontSize: 12, color: 'rgba(255,180,180,0.9)',
+    }}>
+      <span>⚠ Daemon disconnected — terminal sessions may be unavailable</span>
+      <button
+        data-testid="daemon-reconnect-btn"
+        onClick={() => fetch('/api/health').then(() => setDisconnected(false)).catch(() => {})}
+        style={{
+          marginLeft: 'auto', background: 'transparent',
+          border: '1px solid rgba(200,90,90,0.4)',
+          borderRadius: 4, padding: '2px 10px',
+          color: 'rgba(255,180,180,0.9)', cursor: 'pointer', fontSize: 11,
+        }}>Reconnect</button>
+    </div>
+  );
+}
+
 function WindowChrome({ children, tweaks, onToggleTweaks, selectedCount, activeCount }) {
   // Fetch the real version from /api/status on first paint. The hardcoded
   // "v0.4.2" that used to live below was silently stale across every 0.5+
@@ -120,6 +159,7 @@ function WindowChrome({ children, tweaks, onToggleTweaks, selectedCount, activeC
       </div>
 
       <UpdateBanner accent={ACCENTS[tweaks.accent]}/>
+      <DaemonDisconnectedBanner/>
 
       {/* Body: two-pane */}
       <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
@@ -134,6 +174,7 @@ function UpdateBanner({ accent }) {
   // Phases — idle (hidden) | available | downloading | staged | applying | error.
   // Polls on mount + every 5 min (cheap: just reads in-memory state, no HTTP
   // out to github). Phase transitions drive button copy + progress bar.
+  const daemonMode = !!window._daemonToken;
   const [st, setSt] = React.useState(null);
   const [busy, setBusy] = React.useState(null); // 'download' | 'apply' | null
   const [localErr, setLocalErr] = React.useState(null);
@@ -194,12 +235,23 @@ function UpdateBanner({ accent }) {
     if (!confirm('Restart the app now to apply the update?')) return;
     setBusy('apply'); setLocalErr(null);
     try {
-      const r = await fetch('/api/update/apply', { method: 'POST' });
-      const j = await r.json();
-      if (!j.ok) { setLocalErr(j.message || 'apply failed'); setBusy(null); return; }
-      // The server will exit ~800ms after responding. Show a full-screen
-      // curtain so the user sees *something* while the swap script runs.
-      setTimeout(() => window.location.reload(), 6000);
+      if (daemonMode) {
+        const r = await fetch('/api/update/apply-ui-only', { method: 'POST' });
+        const j = await r.json();
+        if (!j.ok) { setLocalErr(j.message || 'apply failed'); setBusy(null); return; }
+        // In daemon mode, close the webview window to let the swap script run.
+        // The daemon stays alive; PTY sessions survive. Fallback reload in case
+        // the pywebview API isn't available (e.g. browser dev mode).
+        window.pywebview?.api?.close_for_update?.();
+        setTimeout(() => window.location.reload(), 1500);
+      } else {
+        const r = await fetch('/api/update/apply', { method: 'POST' });
+        const j = await r.json();
+        if (!j.ok) { setLocalErr(j.message || 'apply failed'); setBusy(null); return; }
+        // The server will exit ~800ms after responding. Show a full-screen
+        // curtain so the user sees *something* while the swap script runs.
+        setTimeout(() => window.location.reload(), 6000);
+      }
     } catch (e) {
       setLocalErr(String(e));
       setBusy(null);
@@ -635,6 +687,22 @@ function firstSessionIdInTree(tree) {
   return null;
 }
 
+function updatePaneSpawn(tree, paneId, ptyId) {
+  if (!tree) return tree;
+  if ((tree.kind === 'pane' || tree.spawn) && tree.id === paneId) {
+    const spawn = ptyId
+      ? { ...tree.spawn, ptyId }
+      : Object.fromEntries(Object.entries(tree.spawn || {}).filter(([k]) => k !== 'ptyId'));
+    return { ...tree, spawn };
+  }
+  if (tree.kind === 'split' && Array.isArray(tree.children)) {
+    const next = tree.children.map((c) => updatePaneSpawn(c, paneId, ptyId));
+    if (next.every((c, i) => c === tree.children[i])) return tree;
+    return { ...tree, children: next };
+  }
+  return tree;
+}
+
 function RightPane({ selected, accent, onOpen, onActiveSessionChange }) {
   // terminals[].tree  is the tile tree for that tab (built via
   // window.splits.makePane / splitNode / closeNode).
@@ -652,6 +720,16 @@ function RightPane({ selected, accent, onOpen, onActiveSessionChange }) {
   // active tab.
   const [focusedPaneId, setFocusedPaneId] = React.useState(null);
   const hydratedRef = React.useRef(false);
+
+  const handlePtyReady = React.useCallback((tabId, paneId, ptyId) => {
+    setTerminals((prev) =>
+      prev.map((tab) =>
+        tab.id !== tabId
+          ? tab
+          : { ...tab, tree: updatePaneSpawn(tab.tree, paneId, ptyId) },
+      ),
+    );
+  }, []);
 
   // Hydrate from the server-persisted snapshot on first mount. PTY
   // processes themselves can't survive a restart — but the tile tree,
@@ -963,7 +1041,12 @@ function RightPane({ selected, accent, onOpen, onActiveSessionChange }) {
               onFocus={setFocusedPaneId}
               onUpdateTree={(updater) => updateActiveTree(updater)}/>
             {panes.map((p) => (
-              <TerminalPane key={p.id} paneId={p.id} spawn={p.spawn}/>
+              <TerminalPane
+                key={p.id}
+                paneId={p.id}
+                spawn={p.spawn}
+                onPtyReady={(ptyId) => handlePtyReady(t.id, p.id, ptyId)}
+              />
             ))}
           </div>
         );

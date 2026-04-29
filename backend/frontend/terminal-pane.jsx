@@ -100,7 +100,7 @@ async function typeIntoPty(send, text) {
 // + render its own prompt (~3s). 8s leaves margin.
 const RESTART_PING_DELAY_MS = 8000;
 
-function TerminalPane({ spawn, onExit, onReady, className, paneId }) {
+function TerminalPane({ spawn, onExit, onReady, onPtyReady, className, paneId }) {
   // `spawn` — object passed as the first WS frame. Shape:
   //   { cmd: ["cmd.exe"] }                // ad-hoc shell
   //   { provider: "claude-code", sessionId: "<uuid>" }  // resume
@@ -118,8 +118,17 @@ function TerminalPane({ spawn, onExit, onReady, className, paneId }) {
   const wsRef = React.useRef(null);
   const fitRef = React.useRef(null);
   const disposedRef = React.useRef(false);
-  const [status, setStatus] = React.useState('connecting'); // connecting|ready|exited|error
+  const reconnectCountRef = React.useRef(0);
+  const statusRef = React.useRef('connecting');
+  const ptyIdNotFoundRef = React.useRef(false);
+  const [status, setStatusState] = React.useState('connecting'); // connecting|ready|exited|error
   const [error, setError] = React.useState(null);
+
+  // Keep statusRef in sync with state on every update
+  const setStatus = React.useCallback((s) => {
+    statusRef.current = s;
+    setStatusState(s);
+  }, []);
 
   // React's "original parent" for our wrapper — whatever DOM element
   // our wrapper was inserted into on first render (the tab div, as
@@ -174,6 +183,8 @@ function TerminalPane({ spawn, onExit, onReady, className, paneId }) {
 
   React.useEffect(() => {
     disposedRef.current = false;
+    reconnectCountRef.current = 0;
+    ptyIdNotFoundRef.current = false;
     // Guard against SSR / early mount where globals aren't loaded yet.
     if (typeof window === 'undefined' || !window.Terminal) {
       console.warn('[pty] xterm.js not loaded yet');
@@ -214,13 +225,11 @@ function TerminalPane({ spawn, onExit, onReady, className, paneId }) {
       try { fit.fit(); } catch (e) { console.warn('[pty] initial fit failed', e); }
     }
 
-    const ws = new WebSocket(ptyWsUrl());
-    wsRef.current = ws;
-
+    // Use wsRef so send always targets the current socket after reconnects
     const send = (obj) => {
       if (disposedRef.current) return;
-      if (ws.readyState !== WebSocket.OPEN) return;
-      ws.send(JSON.stringify(obj));
+      if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+      wsRef.current.send(JSON.stringify(obj));
     };
 
     // Ctrl+C with a selection → copy to clipboard (don't send SIGINT).
@@ -258,146 +267,180 @@ function TerminalPane({ spawn, onExit, onReady, className, paneId }) {
       return true;
     });
 
-    ws.addEventListener('open', () => {
-      const cols = term.cols;
-      const rows = term.rows;
-      const first = { type: 'spawn', cols, rows, ...spawn };
-      console.log('[pty] → spawn', first);
-      send(first);
-    });
+    function openWs() {
+      const ws = new WebSocket(ptyWsUrl());
+      wsRef.current = ws;
 
-    ws.addEventListener('message', (ev) => {
-      if (disposedRef.current) return;
-      let msg;
-      try { msg = JSON.parse(ev.data); }
-      catch { console.warn('[pty] non-JSON frame', ev.data); return; }
-      console.log('[pty] ← ', msg.type, msg);
-      switch (msg.type) {
-        case 'ready': {
-          setStatus('ready');
-          onReady && onReady(msg.id);
-
-          // v1.1.0 (#47): shell-wrap session tabs. If this pane was
-          // opened via "In viewer" on a session, it spawned a shell
-          // (cmd.exe) in the session's cwd — NOT `claude --resume`
-          // directly. Here we type the resume command into the shell
-          // so claude takes over the PTY. When the user later runs
-          // `/exit`, claude quits and the shell prompt returns — the
-          // tab stays alive and reusable.
-          const autoResume = spawn?._autoResume;
-          if (
-            autoResume?.sessionId
-            && msg.id
-            && !window._autoResumeTyped.has(msg.id)
-          ) {
-            window._autoResumeTyped.add(msg.id);
-            // Wait ~1.2s for the shell prompt to render. Then type the
-            // command character-by-character (chunked) so Ink-TUI
-            // doesn't mistake it for a paste block. Trailing Enter is
-            // a SEPARATE frame for the same reason.
-            (async () => {
-              await new Promise((r) => setTimeout(r, 1200));
-              if (disposedRef.current) return;
-              if (!ws || ws.readyState !== WebSocket.OPEN) return;
-              const cmd = `claude --dangerously-skip-permissions --resume ${autoResume.sessionId}`;
-              await typeIntoPty((o) => send(o), cmd);
-              if (disposedRef.current) return;
-              if (!ws || ws.readyState !== WebSocket.OPEN) return;
-              send({ type: 'input', data: '\r' });
-            })();
+      ws.addEventListener('open', () => {
+        const cols = term.cols;
+        const rows = term.rows;
+        // Reattach if we have a ptyId; fresh spawn otherwise (strip ptyId field)
+        if (spawn && spawn.ptyId) {
+          const msg = { type: 'spawn', ptyId: spawn.ptyId, cols, rows };
+          console.log('[pty] → spawn (reattach)', msg);
+          ws.send(JSON.stringify(msg));
+        } else {
+          // Strip any ptyId from a prior session — this is a fresh spawn
+          const spawnMsg = { type: 'spawn', cols, rows };
+          if (spawn) {
+            const { ptyId: _ignored, ...rest } = spawn;
+            Object.assign(spawnMsg, rest);
           }
+          console.log('[pty] → spawn', spawnMsg);
+          ws.send(JSON.stringify(spawnMsg));
+        }
+      });
 
-          // Restart-ping: if this PTY is the resume for a session that was
-          // restored from persisted layout (i.e. the viewer just booted),
-          // and we haven't pinged that session yet this boot, write the
-          // "SOFTWARE RESTARTED" message after a longer delay so the
-          // shell has run `claude --resume` AND claude has finished its
-          // startup handshake.
-          // Accepts either the legacy session spawn shape (spawn.sessionId,
-          // pre-v1.1.0) or the shell-wrap shape (spawn._autoResume.sessionId).
-          const sid = spawn?._autoResume?.sessionId || spawn?.sessionId;
-          if (
-            sid
-            && window._restartPingPending.has(sid)
-            && !window._restartPingFired.has(sid)
-          ) {
-            window._restartPingFired.add(sid);
-            window._restartPingPending.delete(sid);
-            setTimeout(() => {
-              if (disposedRef.current) return;
-              if (!ws || ws.readyState !== WebSocket.OPEN) return;
-              // CRITICAL: send text FIRST, wait, then Enter as a SEPARATE
-              // WS frame. If we send text+\r together, Ink-TUI treats it
-              // as bracketed paste — the trailing \r gets interpreted as
-              // "confirm current menu option" (v1.0.0 bug where this
-              // auto-picked "compact summary" on the resume-choice menu)
-              // AND the ping text lands in the chat input unsent.
-              send({ type: 'input', data: RESTART_PING_TEXT });
+      ws.addEventListener('message', (ev) => {
+        if (disposedRef.current) return;
+        let msg;
+        try { msg = JSON.parse(ev.data); }
+        catch { console.warn('[pty] non-JSON frame', ev.data); return; }
+        console.log('[pty] ← ', msg.type, msg);
+        switch (msg.type) {
+          case 'ready': {
+            setStatus('ready');
+            onReady && onReady(msg.id);
+            onPtyReady && onPtyReady(msg.id);
+            reconnectCountRef.current = 0;
+
+            // v1.1.0 (#47): shell-wrap session tabs. If this pane was
+            // opened via "In viewer" on a session, it spawned a shell
+            // (cmd.exe) in the session's cwd — NOT `claude --resume`
+            // directly. Here we type the resume command into the shell
+            // so claude takes over the PTY. When the user later runs
+            // `/exit`, claude quits and the shell prompt returns — the
+            // tab stays alive and reusable.
+            const autoResume = spawn?._autoResume;
+            if (
+              autoResume?.sessionId
+              && msg.id
+              && !window._autoResumeTyped.has(msg.id)
+            ) {
+              window._autoResumeTyped.add(msg.id);
+              // Wait ~1.2s for the shell prompt to render. Then type the
+              // command character-by-character (chunked) so Ink-TUI
+              // doesn't mistake it for a paste block. Trailing Enter is
+              // a SEPARATE frame for the same reason.
+              (async () => {
+                await new Promise((r) => setTimeout(r, 1200));
+                if (disposedRef.current) return;
+                if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+                const cmd = `claude --dangerously-skip-permissions --resume ${autoResume.sessionId}`;
+                await typeIntoPty((o) => send(o), cmd);
+                if (disposedRef.current) return;
+                if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+                send({ type: 'input', data: '\r' });
+              })();
+            }
+
+            // Restart-ping: if this PTY is the resume for a session that was
+            // restored from persisted layout (i.e. the viewer just booted),
+            // and we haven't pinged that session yet this boot, write the
+            // "SOFTWARE RESTARTED" message after a longer delay so the
+            // shell has run `claude --resume` AND claude has finished its
+            // startup handshake.
+            // Accepts either the legacy session spawn shape (spawn.sessionId,
+            // pre-v1.1.0) or the shell-wrap shape (spawn._autoResume.sessionId).
+            const sid = spawn?._autoResume?.sessionId || spawn?.sessionId;
+            if (
+              sid
+              && window._restartPingPending.has(sid)
+              && !window._restartPingFired.has(sid)
+            ) {
+              window._restartPingFired.add(sid);
+              window._restartPingPending.delete(sid);
               setTimeout(() => {
                 if (disposedRef.current) return;
-                if (!ws || ws.readyState !== WebSocket.OPEN) return;
-                send({ type: 'input', data: '\r' });
-              }, 500);
-            }, RESTART_PING_DELAY_MS);
+                if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+                // CRITICAL: send text FIRST, wait, then Enter as a SEPARATE
+                // WS frame. If we send text+\r together, Ink-TUI treats it
+                // as bracketed paste — the trailing \r gets interpreted as
+                // "confirm current menu option" (v1.0.0 bug where this
+                // auto-picked "compact summary" on the resume-choice menu)
+                // AND the ping text lands in the chat input unsent.
+                send({ type: 'input', data: RESTART_PING_TEXT });
+                setTimeout(() => {
+                  if (disposedRef.current) return;
+                  if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+                  send({ type: 'input', data: '\r' });
+                }, 500);
+              }, RESTART_PING_DELAY_MS);
+            }
+            break;
           }
-          break;
-        }
-        case 'output': {
-          const data = msg.data || '';
-          term.write(data);
-          // Auto-select "Resume full session as-is" if Claude Code asks.
-          // Send digit `2` — Ink's select component takes that as a
-          // one-keystroke pick for the 2nd option. Deduped per sessionId
-          // per viewer boot. Supports both the legacy spawn shape
-          // (spawn.sessionId) and v1.1.0 shell-wrap (spawn._autoResume.
-          // sessionId) so the auto-pick fires regardless of which path
-          // seeded the pane.
-          const sid = spawn?._autoResume?.sessionId || spawn?.sessionId;
-          if (
-            sid
-            && typeof data === 'string'
-            && data.includes(RESUME_PROMPT_MARKER)
-            && !window._resumePromptHandled.has(sid)
-          ) {
-            window._resumePromptHandled.add(sid);
-            // Small delay so the prompt is fully rendered before we
-            // answer — firing input before Ink finishes laying out the
-            // options can be dropped.
-            setTimeout(() => {
-              if (disposedRef.current) return;
-              if (!ws || ws.readyState !== WebSocket.OPEN) return;
-              send({ type: 'input', data: RESUME_PROMPT_PICK_FULL });
-            }, 400);
+          case 'output': {
+            const data = msg.data || '';
+            term.write(data);
+            // Auto-select "Resume full session as-is" if Claude Code asks.
+            // Send digit `2` — Ink's select component takes that as a
+            // one-keystroke pick for the 2nd option. Deduped per sessionId
+            // per viewer boot. Supports both the legacy spawn shape
+            // (spawn.sessionId) and v1.1.0 shell-wrap (spawn._autoResume.
+            // sessionId) so the auto-pick fires regardless of which path
+            // seeded the pane.
+            const sid = spawn?._autoResume?.sessionId || spawn?.sessionId;
+            if (
+              sid
+              && typeof data === 'string'
+              && data.includes(RESUME_PROMPT_MARKER)
+              && !window._resumePromptHandled.has(sid)
+            ) {
+              window._resumePromptHandled.add(sid);
+              // Small delay so the prompt is fully rendered before we
+              // answer — firing input before Ink finishes laying out the
+              // options can be dropped.
+              setTimeout(() => {
+                if (disposedRef.current) return;
+                if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+                send({ type: 'input', data: RESUME_PROMPT_PICK_FULL });
+              }, 400);
+            }
+            break;
           }
-          break;
+          case 'exit':
+            setStatus('exited');
+            onExit && onExit(msg.code);
+            // Leave the terminal visible but disable input — user can see
+            // the final output of a crashed shell.
+            break;
+          case 'error':
+            // If the ptyId we tried to reattach to no longer exists,
+            // signal the parent so it can clear the ptyId and retry a
+            // fresh spawn. Don't set error status here — the effect will
+            // rerun once spawn is updated.
+            if (spawn && spawn.ptyId && String(msg.message || '').includes('not found')) {
+              ptyIdNotFoundRef.current = true;
+              onPtyReady && onPtyReady(null);
+              return;
+            }
+            setStatus('error');
+            setError(String(msg.message || 'server error'));
+            break;
         }
-        case 'exit':
+      });
+
+      ws.addEventListener('error', (ev) => {
+        if (disposedRef.current) return;
+        console.error('[pty] ws error', ev);
+        // Don't set error here — the close handler will fire next and
+        // decide whether to reconnect or mark as exited.
+      });
+
+      ws.addEventListener('close', (ev) => {
+        if (ptyIdNotFoundRef.current) return; // effect will rerun after spawn update
+        if (disposedRef.current) return;
+        console.log('[pty] ws closed', ev.code, ev.reason);
+        if (statusRef.current === 'exited') return;
+        if (window._daemonToken && reconnectCountRef.current < 8) {
+          reconnectCountRef.current += 1;
+          setStatus('connecting');
+          setTimeout(openWs, 2000);
+        } else {
           setStatus('exited');
-          onExit && onExit(msg.code);
-          // Leave the terminal visible but disable input — user can see
-          // the final output of a crashed shell.
-          break;
-        case 'error':
-          setStatus('error');
-          setError(String(msg.message || 'server error'));
-          break;
-      }
-    });
-
-    ws.addEventListener('error', (ev) => {
-      if (disposedRef.current) return;
-      console.error('[pty] ws error', ev);
-      setStatus('error');
-      setError('websocket error');
-    });
-
-    ws.addEventListener('close', (ev) => {
-      if (disposedRef.current) return;
-      console.log('[pty] ws closed', ev.code, ev.reason);
-      if (status !== 'exited' && status !== 'error') {
-        setStatus('exited');
-      }
-    });
+        }
+      });
+    }
 
     // Forward keystrokes → server
     const inputDisp = term.onData((data) => {
@@ -422,12 +465,15 @@ function TerminalPane({ spawn, onExit, onReady, className, paneId }) {
     });
     ro.observe(hostRef.current);
 
+    openWs();
+
     return () => {
       disposedRef.current = true;
       try { ro.disconnect(); } catch {}
       try { inputDisp.dispose(); resizeDisp.dispose(); } catch {}
       try {
-        if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+        const ws = wsRef.current;
+        if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
           ws.close(1000, 'pane-unmount');
         }
       } catch {}
