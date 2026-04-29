@@ -69,6 +69,10 @@ include-package-data = true
 
 [tool.setuptools.package-data]
 "backend.frontend" = ["*.html", "*.jsx", "*.js", "*.css", "*.png", "*.svg", "*.ico"]
+# Vendored frontend deps (React, Babel, xterm.js + addons) — shipped so
+# the app boots offline. Listed as its own subpackage so the recursive
+# glob actually fires; setuptools' flat glob above would skip the dir.
+"backend.frontend.vendor" = ["*.js", "*.css"]
 
 [tool.ruff]
 line-length = 110
