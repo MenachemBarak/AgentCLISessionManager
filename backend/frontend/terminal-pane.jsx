@@ -223,6 +223,41 @@ function TerminalPane({ spawn, onExit, onReady, className, paneId }) {
       ws.send(JSON.stringify(obj));
     };
 
+    // Ctrl+C with a selection → copy to clipboard (don't send SIGINT).
+    // Ctrl+V → paste clipboard text into the PTY.
+    // Ctrl+Shift+C / Ctrl+Shift+V remain available as always-copy / always-paste.
+    term.attachCustomKeyEventHandler((ev) => {
+      if (ev.type !== 'keydown') return true;
+      const ctrl = ev.ctrlKey || ev.metaKey;
+      if (!ctrl || ev.shiftKey || ev.altKey) return true;
+
+      if (ev.key === 'c' && term.hasSelection()) {
+        const text = term.getSelection();
+        if (text) {
+          navigator.clipboard.writeText(text).catch(() => {
+            const ta = Object.assign(document.createElement('textarea'), {
+              value: text,
+            });
+            ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0';
+            document.body.appendChild(ta);
+            ta.select();
+            try { document.execCommand('copy'); } catch {}
+            document.body.removeChild(ta);
+          });
+        }
+        return false; // consumed — do NOT send SIGINT to PTY
+      }
+
+      if (ev.key === 'v') {
+        navigator.clipboard.readText().then((text) => {
+          if (text && !disposedRef.current) send({ type: 'input', data: text });
+        }).catch(() => {});
+        return false; // consumed — do NOT send 0x16 to PTY
+      }
+
+      return true;
+    });
+
     ws.addEventListener('open', () => {
       const cols = term.cols;
       const rows = term.rows;
