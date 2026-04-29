@@ -6,6 +6,26 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.3.0] — 2026-04-29
+
+### Added
+- Daemon keepalive (ADR-18 Phases 8–10): running PTY sessions now survive
+  UI updates. The UI window closes and restarts while `AgentManager-Daemon.exe`
+  keeps all PTYs alive; on relaunch each pane reattaches to its previous PTY
+  and replays the ring-buffer scrollback (#122)
+- `POST /api/update/apply-ui-only` — swaps only the UI exe, leaving the
+  daemon (and all PTYs) running during an update
+- `AgentManager-Daemon.exe` shipped as a separate release asset built by
+  `pyinstaller-daemon.spec`
+- `DaemonDisconnectedBanner` in the UI: warns and offers reconnect when the
+  daemon is unreachable
+- Daemon mode is now on by default (`AGENTMANAGER_DAEMON=0` to opt out)
+
+### Fixed
+- `onPtyReady` feedback loop: writing `ptyId` back into spawn no longer
+  re-triggers the WS effect, which was silently destroying PTYs under
+  Phase-5 rules and breaking split-pane, shell-wrap, and auto-resume tests
+
 ## [1.2.19] — 2026-04-29
 
 ### Added
