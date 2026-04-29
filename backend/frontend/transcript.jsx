@@ -46,6 +46,28 @@ function Transcript({ session, accent, onOpen }) {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [session?.id]);
 
+  // Ctrl+C on selected transcript text → copy to clipboard. EdgeWebView2
+  // normally handles this natively, but this explicit path ensures it works
+  // even when pywebview's clipboard API is restricted.
+  useEffectTx(() => {
+    const onCopy = (e) => {
+      const ctrl = e.ctrlKey || e.metaKey;
+      if (!ctrl || e.key !== 'c') return;
+      // Only handle when focus is NOT in a terminal (xterm has its own handler).
+      if (document.activeElement?.closest?.('.xterm')) return;
+      const sel = window.getSelection();
+      if (!sel || sel.isCollapsed) return;
+      const text = sel.toString();
+      if (!text) return;
+      navigator.clipboard.writeText(text).catch(() => {
+        try { document.execCommand('copy'); } catch {}
+      });
+      // No preventDefault — let the browser also handle it.
+    };
+    window.addEventListener('keydown', onCopy, true);
+    return () => window.removeEventListener('keydown', onCopy, true);
+  }, []);
+
   // Ctrl+F opens the find bar. Active when the transcript pane has focus
   // (any element inside it) OR when the bar is already open. Esc closes.
   useEffectTx(() => {
