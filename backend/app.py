@@ -367,10 +367,21 @@ def _is_live_marker(pid: int, started_at_ms: int | None) -> bool:
         return False
 
 
+_last_active_cleanup: float = 0.0
+_ACTIVE_CLEANUP_INTERVAL_S = 30.0
+
+
 def _get_active_session_ids() -> set[str]:
+    global _last_active_cleanup
     active: set[str] = set()
     if not ACTIVE_DIR.is_dir():
         return active
+    # Auto-evict stale markers every 30 s so the badge clears without a
+    # manual rescan (catches processes that exited since the last check).
+    now = time.time()
+    if now - _last_active_cleanup > _ACTIVE_CLEANUP_INTERVAL_S:
+        _last_active_cleanup = now
+        _cleanup_stale_active_markers()
     for f in ACTIVE_DIR.glob("*.json"):
         try:
             data = json.loads(f.read_text(encoding="utf-8"))
@@ -384,13 +395,15 @@ def _get_active_session_ids() -> set[str]:
     return active
 
 
-def _activity_for(path: Path) -> str:
+def _activity_for(path: Path) -> str | None:
     age = time.time() - path.stat().st_mtime
     if age < 3:
         return "streaming"
     if age < 15:
         return "thinking"
-    return "active"
+    if age < 300:
+        return "idle"
+    return None  # alive but silent for >5 min — dot is enough, no text badge
 
 
 # ─────────────────────── Session index (cache) ───────────────────────

@@ -317,6 +317,12 @@ function TerminalPane({ spawn, onExit, onReady, onPtyReady, className, paneId })
             onPtyReady && onPtyReady(msg.id);
             reconnectCountRef.current = 0;
 
+            // Daemon kept this PTY alive across a UI restart — Claude is
+            // still running. Do not type --resume (would nest a second
+            // claude inside the live one) and do not send the restart ping
+            // (Claude was never interrupted, so the prompt is meaningless).
+            if (msg.reattached) break;
+
             // v1.1.0 (#47): shell-wrap session tabs. If this pane was
             // opened via "In viewer" on a session, it spawned a shell
             // (cmd.exe) in the session's cwd — NOT `claude --resume`

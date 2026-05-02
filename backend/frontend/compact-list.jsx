@@ -199,7 +199,7 @@ function CompactRow({ session, accent, selected, onSelect, onOpen, onHover, onLe
         fontSize: 10, color: 'rgba(255,255,255,0.4)',
         paddingLeft: 14,
       }}>
-        {session.active && (
+        {session.active && session.activityLabel && (
           <>
             <span style={{
               color: accent, textTransform: 'uppercase', letterSpacing: 0.5,

@@ -6,6 +6,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.3.3] — 2026-05-02
+
+### Fixed
+- Update/restart no longer sends "SOFTWARE RESTARTED" ping or types
+  `--resume` into sessions whose PTY survived in the daemon; the backend
+  already sends `reattached: true` in the `ready` frame — the frontend
+  now respects it (#127)
+- STREAMING / THINKING / IDLE badges now auto-clear within 30 s when a
+  Claude process exits, without requiring a manual rescan; stale PID
+  markers are swept on a 30-second background timer (#127)
+- Session activity badges: "STREAMING" (<3 s output), "THINKING" (<15 s),
+  "IDLE" (<5 min), no badge (>5 min) — replaces the misleading "ACTIVE"
+  text that showed on all long-running sessions (#127)
+
 ## [1.3.2] — 2026-05-02
 
 ### Fixed
