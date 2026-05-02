@@ -6,6 +6,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.3.2] — 2026-05-02
+
+### Fixed
+- Terminal paste (Ctrl+V) no longer fires twice and no longer triggers a
+  browser clipboard-read permission popup; xterm.js's native textarea paste
+  handler is now the sole path (#126)
+- Box-drawing and other ambiguous-width characters (e.g. `──────`) now render
+  correctly; vendored `@xterm/addon-unicode11@0.9.0` and activated Unicode 11
+  width tables on startup (#126)
+
 ## [1.3.1] — 2026-04-29
 
 ### Fixed

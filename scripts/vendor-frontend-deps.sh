@@ -22,6 +22,7 @@ declare -A DEPS=(
   [xterm.css]="https://unpkg.com/@xterm/xterm@5.5.0/css/xterm.css"
   [addon-fit.js]="https://unpkg.com/@xterm/addon-fit@0.10.0/lib/addon-fit.js"
   [addon-web-links.js]="https://unpkg.com/@xterm/addon-web-links@0.11.0/lib/addon-web-links.js"
+  [addon-unicode11.js]="https://unpkg.com/@xterm/addon-unicode11@0.9.0/lib/addon-unicode11.js"
 )
 
 for name in "${!DEPS[@]}"; do

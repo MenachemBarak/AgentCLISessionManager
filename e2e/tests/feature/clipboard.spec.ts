@@ -62,13 +62,12 @@ test.describe('clipboard — terminal (xterm.js)', () => {
     await seedEmptyLayout(request);
   });
 
-  test('new terminal tab mounts TerminalPane (attachCustomKeyEventHandler wired)', async ({ page, context }) => {
+  test('new terminal tab mounts TerminalPane', async ({ page, context }) => {
     await context.grantPermissions(['clipboard-read', 'clipboard-write']);
     await page.goto('/');
     await expect(page.getByTestId('session-search-input')).toBeVisible({ timeout: 10_000 });
 
-    // Click "New terminal" — triggers TerminalPane mount which calls
-    // term.open() and attaches our clipboard handler.
+    // Click "New terminal" — triggers TerminalPane mount which calls term.open().
     await page.getByTestId('right-tab-new-terminal').click();
 
     // tile-pane-* appears when a TerminalPane is mounted in the tile tree.

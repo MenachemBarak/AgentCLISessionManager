@@ -32,6 +32,7 @@ REQUIRED_VENDORED = [
     "xterm.css",
     "addon-fit.js",
     "addon-web-links.js",
+    "addon-unicode11.js",
 ]
 
 

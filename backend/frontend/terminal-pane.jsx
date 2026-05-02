@@ -213,6 +213,7 @@ function TerminalPane({ spawn, onExit, onReady, onPtyReady, className, paneId })
     const Terminal = window.Terminal;
     const FitAddon = window.FitAddon && window.FitAddon.FitAddon;
     const WebLinksAddon = window.WebLinksAddon && window.WebLinksAddon.WebLinksAddon;
+    const Unicode11Addon = window.Unicode11Addon && window.Unicode11Addon.Unicode11Addon;
 
     const term = new Terminal({
       convertEol: false,  // pywinpty already emits \r\n; no double-conversion
@@ -236,6 +237,7 @@ function TerminalPane({ spawn, onExit, onReady, onPtyReady, className, paneId })
       fitRef.current = fit;
     }
     if (WebLinksAddon) term.loadAddon(new WebLinksAddon());
+    if (Unicode11Addon) { term.loadAddon(new Unicode11Addon()); term.unicode.activeVersion = '11'; }
 
     term.open(hostRef.current);
     if (fit) {
@@ -250,7 +252,7 @@ function TerminalPane({ spawn, onExit, onReady, onPtyReady, className, paneId })
     };
 
     // Ctrl+C with a selection → copy to clipboard (don't send SIGINT).
-    // Ctrl+V → paste clipboard text into the PTY.
+    // Ctrl+V is handled natively by xterm's textarea paste listener (no custom handler needed).
     // Ctrl+Shift+C / Ctrl+Shift+V remain available as always-copy / always-paste.
     term.attachCustomKeyEventHandler((ev) => {
       if (ev.type !== 'keydown') return true;
@@ -272,13 +274,6 @@ function TerminalPane({ spawn, onExit, onReady, onPtyReady, className, paneId })
           });
         }
         return false; // consumed — do NOT send SIGINT to PTY
-      }
-
-      if (ev.key === 'v') {
-        navigator.clipboard.readText().then((text) => {
-          if (text && !disposedRef.current) send({ type: 'input', data: text });
-        }).catch(() => {});
-        return false; // consumed — do NOT send 0x16 to PTY
       }
 
       return true;
